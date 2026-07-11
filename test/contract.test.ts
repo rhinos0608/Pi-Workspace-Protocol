@@ -38,8 +38,8 @@ function buildValidEnvelope(): WorkspaceEvidenceEnvelope {
     };
 }
 
-test("PROTOCOL_SCHEMA_VERSION is 2", () => {
-    assert.equal(PROTOCOL_SCHEMA_VERSION, 2);
+test("PROTOCOL_SCHEMA_VERSION is 3", () => {
+    assert.equal(PROTOCOL_SCHEMA_VERSION, 3);
 });
 
 test("validateInspectionEnvelope accepts a valid envelope", () => {
@@ -86,6 +86,24 @@ test("validateInspectionEnvelope rejects empty resources", () => {
     assert.equal(r.ok, false);
 });
 
+test("validateInspectionEnvelope allows empty resources for map/query/symbol modes", () => {
+    for (const mode of ["map", "query", "symbol"] as const) {
+        const r = validateInspectionEnvelope({ ...buildValidEnvelope(), resources: [], mode });
+        assert.equal(r.ok, true, `mode=${mode} should allow empty resources`);
+    }
+    const rPath = validateInspectionEnvelope({ ...buildValidEnvelope(), resources: [], mode: "path" });
+    assert.equal(rPath.ok, false, "mode=path should still require resources");
+});
+
+test("validateInspectionEnvelope accepts search-match and metadata-only coverage", () => {
+    const env = buildValidEnvelope();
+    for (const coverage of ["search-match", "metadata-only"] as const) {
+        const weak = { ...env, resources: [{ ...env.resources[0]!, kind: "range" as const, coverage, fullFileSha256: undefined, fresh: false }] };
+        const r = validateInspectionEnvelope(weak);
+        assert.equal(r.ok, true, `coverage=${coverage} should be accepted`);
+    }
+});
+
 test("validateEvidenceRef requires inspectionId and resourceIds", () => {
     const ok: EvidenceRef = { inspectionId: "x", resourceIds: ["r1"] };
     assert.equal(validateEvidenceRef(ok).ok, true);
@@ -114,6 +132,28 @@ test("validatePatchRequest accepts multi-file patch with per-edit paths", () => 
     // missing path
     const bad2: PatchRequest = { ...valid, path: "" };
     assert.equal(validatePatchRequest(bad2).ok, false);
+});
+
+test("validatePatchRequest allows omitted evidenceRef (auto-inspect) and omitted path when every edit has one", () => {
+    const autoInspect = {
+        edits: [{ oldText: "x", newText: "y", path: "/abs/ws/a.ts" }],
+        toolCallId: "tc1",
+    };
+    assert.equal(validatePatchRequest(autoInspect).ok, true);
+
+    // path omitted at top level, but not every edit has one -> reject
+    const missingPath = {
+        edits: [{ oldText: "x", newText: "y", path: "/abs/ws/a.ts" }, { oldText: "a", newText: "b" }],
+        toolCallId: "tc1",
+    };
+    assert.equal(validatePatchRequest(missingPath).ok, false);
+
+    // missing toolCallId always rejected
+    const noToolCallId = {
+        path: "/abs/ws/a.ts",
+        edits: [{ oldText: "x", newText: "y" }],
+    };
+    assert.equal(validatePatchRequest(noToolCallId).ok, false);
 });
 
 test("event message codec round-trips", () => {

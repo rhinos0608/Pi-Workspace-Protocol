@@ -2,7 +2,7 @@
  * Runtime validators / codecs.
  * Pure functions. No I/O. No Pi imports.
  */
-import { PROTOCOL_SCHEMA_VERSION, type WorkspaceEvidenceEnvelope, type EvidenceRef, type PatchRequest, type EventMessage, type InspectedResource } from "./types.js";
+import { PROTOCOL_SCHEMA_VERSION, type WorkspaceEvidenceEnvelope, type EvidenceRef, type PatchRequest, type EventMessage, type InspectedResource, type InspectMode } from "./types.js";
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -39,14 +39,14 @@ function validateResource(r: unknown, idx: number): Result<InspectedResource> {
         return fail(`${where}.canonicalPath must not contain NUL`);
     if (kind !== "full" && kind !== "range")
         return fail(`${where}.kind must be 'full' or 'range'`);
-    if (coverage !== "full-file" && coverage !== "line-range")
-        return fail(`${where}.coverage must be 'full-file' or 'line-range'`);
+    if (coverage !== "full-file" && coverage !== "line-range" && coverage !== "search-match" && coverage !== "metadata-only")
+        return fail(`${where}.coverage must be 'full-file', 'line-range', 'search-match', or 'metadata-only'`);
 
     // Cross-field rules
     if (kind === "full" && coverage !== "full-file")
         return fail(`${where}: kind=full requires coverage=full-file`);
-    if (kind === "range" && coverage !== "line-range")
-        return fail(`${where}: kind=range requires coverage=line-range`);
+    if (kind === "range" && coverage === "full-file")
+        return fail(`${where}: kind=range is incompatible with coverage=full-file`);
 
     if (!Array.isArray(allowedRanges) || allowedRanges.length === 0)
         return fail(`${where}.allowedRanges must be a non-empty array`);
@@ -64,7 +64,8 @@ function validateResource(r: unknown, idx: number): Result<InspectedResource> {
             return fail(`${where}: coverage=full-file requires fresh=true`);
         }
     } else {
-        // line-range: fullFileSha256 optional but if present must be valid hex
+        // line-range / search-match / metadata-only: fullFileSha256 optional
+        // but if present must be valid hex.
         if (fullFileSha256 !== undefined && (typeof fullFileSha256 !== "string" || !HEX64.test(fullFileSha256)))
             return fail(`${where}: fullFileSha256, if present, must be a 64-hex sha256`);
         if (fresh !== true && fresh !== false)
@@ -81,7 +82,7 @@ function validateResource(r: unknown, idx: number): Result<InspectedResource> {
 
 export function validateInspectionEnvelope(input: unknown): Result<WorkspaceEvidenceEnvelope> {
     if (!isPlainObject(input)) return fail("envelope must be an object");
-    const { schemaVersion, inspectionId, sessionId, workspaceRoot, canonicalWorkspaceRoot, createdAt, resources } = input;
+    const { schemaVersion, inspectionId, sessionId, workspaceRoot, canonicalWorkspaceRoot, createdAt, resources, mode } = input;
 
     if (schemaVersion !== PROTOCOL_SCHEMA_VERSION) return fail(`schemaVersion must be ${PROTOCOL_SCHEMA_VERSION}`);
     if (typeof inspectionId !== "string" || !HEX64.test(inspectionId))
@@ -94,10 +95,16 @@ export function validateInspectionEnvelope(input: unknown): Result<WorkspaceEvid
         return fail("canonicalWorkspaceRoot must be a non-empty string");
     if (typeof createdAt !== "string" || !ISO_DURATION_SAFE.test(createdAt))
         return fail("createdAt must be an ISO-8601 UTC string");
+    if (mode !== undefined && mode !== "path" && mode !== "query" && mode !== "symbol" && mode !== "map")
+        return fail("mode, if present, must be 'path', 'query', 'symbol', or 'map'");
     if (!Array.isArray(resources))
         return fail("resources must be an array");
-    // v3: map and symbol modes may have zero resources (no file-level authorization issued).
-    // Path and query modes still require at least one resource.
+    // map mode issues no file-level authorization by design (zero resources).
+    // query/symbol modes may legitimately have zero resources (zero hits).
+    // path mode (or no mode, for v1/v2 back-compat) always requires >= 1 resource.
+    const modeAllowsEmpty: InspectMode[] = ["map", "query", "symbol"];
+    if (resources.length === 0 && !(typeof mode === "string" && modeAllowsEmpty.includes(mode as InspectMode)))
+        return fail("resources must be a non-empty array for path mode (or when mode is omitted)");
 
     for (let i = 0; i < resources.length; i++) {
         const v = validateResource(resources[i], i);
@@ -123,23 +130,34 @@ export function validateEvidenceRef(input: unknown): Result<EvidenceRef> {
 export function validatePatchRequest(input: unknown): Result<PatchRequest> {
     if (!isPlainObject(input)) return fail("patch request must be an object");
     const { path, edits, evidenceRef, toolCallId } = input;
-    if (typeof path !== "string" || path.length === 0)
-        return fail("patch.path must be a non-empty string");
+    if (path !== undefined && (typeof path !== "string" || path.length === 0))
+        return fail("patch.path, if present, must be a non-empty string");
     if (!Array.isArray(edits) || edits.length === 0)
         return fail("patch.edits must be a non-empty array");
     // v3: multi-file patch. Each edit may carry its own path.
-    // If an edit has no path, it inherits the top-level path.
+    // If an edit has no path, it inherits the top-level path — so when the
+    // top-level path is omitted, every edit MUST supply its own.
+    let everyEditHasPath = true;
     for (let i = 0; i < edits.length; i++) {
         const e = edits[i];
         if (!isPlainObject(e)) return fail(`patch.edits[${i}] must be an object`);
         const ep = (e as { path?: unknown }).path;
-        if (ep !== undefined && typeof ep !== "string")
-            return fail(`patch.edits[${i}].path must be a string if present`);
+        if (ep !== undefined) {
+            if (typeof ep !== "string" || ep.length === 0)
+                return fail(`patch.edits[${i}].path must be a non-empty string if present`);
+        } else {
+            everyEditHasPath = false;
+        }
     }
+    if (path === undefined && !everyEditHasPath)
+        return fail("patch.path is required unless every edit provides its own path");
     if (typeof toolCallId !== "string" || toolCallId.length === 0)
         return fail("patch.toolCallId must be a non-empty string");
-    const er = validateEvidenceRef(evidenceRef);
-    if (!er.ok) return er;
+    // evidenceRef is optional: omitted means auto-inspect. If present, validate it.
+    if (evidenceRef !== undefined) {
+        const er = validateEvidenceRef(evidenceRef);
+        if (!er.ok) return er;
+    }
     return ok(input as unknown as PatchRequest);
 }
 

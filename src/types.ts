@@ -3,7 +3,7 @@
  * No Pi imports. No filesystem state. No singletons.
  */
 
-export const PROTOCOL_SCHEMA_VERSION = 2 as const;
+export const PROTOCOL_SCHEMA_VERSION = 3 as const;
 
 /** sha256 hex digest (64 chars) */
 export type Sha256 = string;
@@ -23,7 +23,15 @@ export interface LineRange {
     readonly endLine: number;
 }
 
-export type Coverage = "full-file" | "line-range";
+/**
+ * - "full-file" / "line-range": strong coverage. Backed by a real
+ *   fullFileSha256 (full-file) or MAY carry one (line-range). Authorizes patch.
+ * - "search-match" / "metadata-only": weak coverage. Produced by query/symbol
+ *   inspect modes from match pointers, not a targeted read. Never carries a
+ *   trustworthy fullFileSha256. patch MUST reject these — the model must
+ *   path-mode inspect the file before mutating it.
+ */
+export type Coverage = "full-file" | "line-range" | "search-match" | "metadata-only";
 export type ResourceKind = "full" | "range";
 
 /** Inspect mode: how the agent discovered the resources. */
@@ -136,9 +144,10 @@ export interface PatchEditItemV3 extends PatchEditItem {
 }
 
 export interface PatchRequest {
-    readonly path: CanonicalPath;
+    readonly path?: CanonicalPath;
     readonly edits: ReadonlyArray<PatchEditItemV3>;
-    readonly evidenceRef: EvidenceRef;
+    /** Omit for auto-inspect (patch reads + hashes each target file itself). */
+    readonly evidenceRef?: EvidenceRef;
     readonly toolCallId: string;
 }
 
