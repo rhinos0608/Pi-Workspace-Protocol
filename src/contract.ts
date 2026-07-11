@@ -94,8 +94,10 @@ export function validateInspectionEnvelope(input: unknown): Result<WorkspaceEvid
         return fail("canonicalWorkspaceRoot must be a non-empty string");
     if (typeof createdAt !== "string" || !ISO_DURATION_SAFE.test(createdAt))
         return fail("createdAt must be an ISO-8601 UTC string");
-    if (!Array.isArray(resources) || resources.length === 0)
-        return fail("resources must be a non-empty array");
+    if (!Array.isArray(resources))
+        return fail("resources must be an array");
+    // v3: map and symbol modes may have zero resources (no file-level authorization issued).
+    // Path and query modes still require at least one resource.
 
     for (let i = 0; i < resources.length; i++) {
         const v = validateResource(resources[i], i);
