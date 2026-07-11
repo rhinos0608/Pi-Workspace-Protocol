@@ -125,14 +125,14 @@ export function validatePatchRequest(input: unknown): Result<PatchRequest> {
         return fail("patch.path must be a non-empty string");
     if (!Array.isArray(edits) || edits.length === 0)
         return fail("patch.edits must be a non-empty array");
-    // multi-file prohibition: patch is single-file, so all edits MUST target the
-    // same path; if an edit carries its own path, it must equal the top-level path.
+    // v3: multi-file patch. Each edit may carry its own path.
+    // If an edit has no path, it inherits the top-level path.
     for (let i = 0; i < edits.length; i++) {
         const e = edits[i];
         if (!isPlainObject(e)) return fail(`patch.edits[${i}] must be an object`);
         const ep = (e as { path?: unknown }).path;
-        if (ep !== undefined && (typeof ep !== "string" || ep !== path))
-            return fail(`patch.edits[${i}].path must equal top-level path (single-file)`);
+        if (ep !== undefined && typeof ep !== "string")
+            return fail(`patch.edits[${i}].path must be a string if present`);
     }
     if (typeof toolCallId !== "string" || toolCallId.length === 0)
         return fail("patch.toolCallId must be a non-empty string");

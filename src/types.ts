@@ -3,7 +3,7 @@
  * No Pi imports. No filesystem state. No singletons.
  */
 
-export const PROTOCOL_SCHEMA_VERSION = 1 as const;
+export const PROTOCOL_SCHEMA_VERSION = 2 as const;
 
 /** sha256 hex digest (64 chars) */
 export type Sha256 = string;
@@ -25,6 +25,9 @@ export interface LineRange {
 
 export type Coverage = "full-file" | "line-range";
 export type ResourceKind = "full" | "range";
+
+/** Inspect mode: how the agent discovered the resources. */
+export type InspectMode = "path" | "query" | "symbol" | "map";
 
 /**
  * A single resource captured by an inspect call.
@@ -60,6 +63,8 @@ export interface WorkspaceEvidenceEnvelope {
     readonly canonicalWorkspaceRoot: CanonicalWorkspaceRoot;
     readonly createdAt: string;
     readonly resources: ReadonlyArray<InspectedResource>;
+    /** v3: how the agent discovered these resources. */
+    readonly mode?: InspectMode;
 }
 
 /** A reference to a specific inspection's resources for use by patch. */
@@ -125,9 +130,14 @@ export interface PatchDetails {
     readonly error?: string;
 }
 
+/** v3: per-edit paths for multi-file patch. path is still required as default. */
+export interface PatchEditItemV3 extends PatchEditItem {
+    readonly path?: CanonicalPath;
+}
+
 export interface PatchRequest {
     readonly path: CanonicalPath;
-    readonly edits: ReadonlyArray<PatchEditItem>;
+    readonly edits: ReadonlyArray<PatchEditItemV3>;
     readonly evidenceRef: EvidenceRef;
     readonly toolCallId: string;
 }

@@ -38,8 +38,8 @@ function buildValidEnvelope(): WorkspaceEvidenceEnvelope {
     };
 }
 
-test("PROTOCOL_SCHEMA_VERSION is 1", () => {
-    assert.equal(PROTOCOL_SCHEMA_VERSION, 1);
+test("PROTOCOL_SCHEMA_VERSION is 2", () => {
+    assert.equal(PROTOCOL_SCHEMA_VERSION, 2);
 });
 
 test("validateInspectionEnvelope accepts a valid envelope", () => {
@@ -48,7 +48,7 @@ test("validateInspectionEnvelope accepts a valid envelope", () => {
 });
 
 test("validateInspectionEnvelope rejects wrong schema version", () => {
-    const r = validateInspectionEnvelope({ ...buildValidEnvelope(), schemaVersion: 2 });
+    const r = validateInspectionEnvelope({ ...buildValidEnvelope(), schemaVersion: 999 });
     assert.equal(r.ok, false);
     if (!r.ok) assert.match(r.error, /schemaVersion/);
 });
@@ -94,7 +94,7 @@ test("validateEvidenceRef requires inspectionId and resourceIds", () => {
     assert.equal(validateEvidenceRef({ inspectionId: "x", resourceIds: [""] }).ok, false);
 });
 
-test("validatePatchRequest requires single-file edit and valid evidenceRef", () => {
+test("validatePatchRequest accepts multi-file patch with per-edit paths", () => {
     const valid: PatchRequest = {
         path: "/abs/ws/a.ts",
         edits: [{ oldText: "x", newText: "y" }],
@@ -107,9 +107,9 @@ test("validatePatchRequest requires single-file edit and valid evidenceRef", () 
     const bad1: PatchRequest = { ...valid, edits: [] };
     assert.equal(validatePatchRequest(bad1).ok, false);
 
-    // multi-file (different path in an edit) forbidden
-    const bad1b: PatchRequest = { ...valid, edits: [{ oldText: "a", newText: "b" }, { oldText: "c", newText: "d", path: "/abs/ws/other.ts" }] };
-    assert.equal(validatePatchRequest(bad1b).ok, false);
+    // multi-file (different path in an edit) now accepted in v3
+    const multi: PatchRequest = { ...valid, edits: [{ oldText: "a", newText: "b" }, { oldText: "c", newText: "d", path: "/abs/ws/other.ts" }] };
+    assert.equal(validatePatchRequest(multi).ok, true);
 
     // missing path
     const bad2: PatchRequest = { ...valid, path: "" };

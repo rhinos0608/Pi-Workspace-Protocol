@@ -116,7 +116,7 @@ test("rpc validates message schema and ignores invalid", async () => {
 
     // Send an invalid message directly
     bus.emit("test.rpc", { kind: "garbage" });
-    bus.emit("test.rpc", { kind: "request", requestId: "r1", rpc: "resolve_evidence", payload: {}, schemaVersion: 1 });
+    bus.emit("test.rpc", { kind: "request", requestId: "r1", rpc: "resolve_evidence", payload: {}, schemaVersion: 2 });
     // give server a moment
     await new Promise((r) => setTimeout(r, 20));
     assert.equal(seen.length, 1);
