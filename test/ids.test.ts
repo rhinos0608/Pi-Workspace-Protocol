@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sha256OfString, sha256OfBytes, resourceIdFor, inspectionIdFor, canonicalizeWorkspaceRoot, hashSessionFilePath } from "../src/ids.js";
+import { sha256OfString, sha256OfBytes, sha256OfFileContents, resourceIdFor, inspectionIdFor, canonicalizeWorkspaceRoot, hashSessionFilePath } from "../src/ids.js";
 
 test("sha256OfString is hex and deterministic", () => {
     const a = sha256OfString("hello world");
@@ -66,4 +66,21 @@ test("hashSessionFilePath returns stable hex sha256 of the file path", () => {
     // different path -> different id
     const other = hashSessionFilePath("/sessions/def.jsonl");
     assert.notEqual(id1, other);
+});
+
+test("sha256OfFileContents matches sha256OfString for same string", () => {
+    const s = "const x = 1;\n";
+    assert.equal(sha256OfFileContents(s), sha256OfString(s));
+    assert.equal(sha256OfFileContents(""), sha256OfString(""));
+    assert.equal(sha256OfFileContents("hello").length, 64);
+});
+
+test("inspectionIdFor is invariant to resource ordering", () => {
+    const res = (path: string) => ({ canonicalPath: path });
+    const ordered = [res("/ws/a.ts"), res("/ws/b.ts"), res("/ws/c.ts")];
+    const shuffled = [res("/ws/c.ts"), res("/ws/a.ts"), res("/ws/b.ts")];
+    const a = inspectionIdFor({ sessionId: "s1", workspaceRoot: "/ws", resources: ordered });
+    const b = inspectionIdFor({ sessionId: "s1", workspaceRoot: "/ws", resources: shuffled });
+    assert.equal(a, b, "inspectionId must not depend on resource order");
+    assert.equal(a.length, 64);
 });

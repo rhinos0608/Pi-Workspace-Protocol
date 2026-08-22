@@ -29,15 +29,22 @@ export interface RpcServer {
 }
 
 export function createRpcServer(opts: RpcServerOptions): RpcServer {
+    const inFlight = new Set<string>();
+
     const off = opts.bus.on(opts.channel, (raw) => {
         const v = validateEventMessage(raw);
         if (!v.ok) return;
         const msg = v.value;
         if (msg.kind !== "request") return;
 
+        // Duplicate-request protection: ignore concurrent duplicate requestIds.
+        if (inFlight.has(msg.requestId)) return;
+        inFlight.add(msg.requestId);
+
         Promise.resolve()
             .then(() => opts.handler(msg))
             .then((payload) => {
+                inFlight.delete(msg.requestId);
                 const reply: ReplyEvent = {
                     kind: "reply",
                     requestId: msg.requestId,
@@ -48,6 +55,7 @@ export function createRpcServer(opts: RpcServerOptions): RpcServer {
                 opts.bus.emit(opts.channel, reply);
             })
             .catch((err) => {
+                inFlight.delete(msg.requestId);
                 if (opts.onError) opts.onError(err);
                 const reply: ReplyEvent = {
                     kind: "reply",

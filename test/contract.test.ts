@@ -58,6 +58,7 @@ test("validateInspectionEnvelope rejects truncated full file (coverage=full-file
     const bad = { ...env, resources: [{ ...env.resources[0]!, fullFileSha256: undefined, fresh: false, coverage: "truncated" as any }] };
     const r = validateInspectionEnvelope(bad);
     assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /coverage/);
 });
 
 test("validateInspectionEnvelope rejects range with endLine<startLine", () => {
@@ -65,6 +66,7 @@ test("validateInspectionEnvelope rejects range with endLine<startLine", () => {
     const bad = { ...env, resources: [{ ...env.resources[0]!, kind: "range" as const, coverage: "line-range" as const, allowedRanges: [{ startLine: 50, endLine: 10 }], fullFileSha256: undefined }] };
     const r = validateInspectionEnvelope(bad);
     assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /endLine/);
 });
 
 test("validateInspectionEnvelope accepts line-range without fullFileSha256 (used by inside-queue verification)", () => {
@@ -84,6 +86,7 @@ test("validateInspectionEnvelope accepts line-range WITH fullFileSha256", () => 
 test("validateInspectionEnvelope rejects empty resources", () => {
     const r = validateInspectionEnvelope({ ...buildValidEnvelope(), resources: [] });
     assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /non-empty/);
 });
 
 test("validateInspectionEnvelope allows empty resources for map/query/symbol modes", () => {
@@ -104,19 +107,29 @@ test("validateInspectionEnvelope accepts search-match and metadata-only coverage
     }
 });
 
-test("validateEvidenceRef requires inspectionId and resourceIds", () => {
-    const ok: EvidenceRef = { inspectionId: "x", resourceIds: ["r1"] };
+test("validateEvidenceRef requires inspectionId (64-hex) and resourceIds", () => {
+    const ok: EvidenceRef = { inspectionId: "a".repeat(64), resourceIds: ["r1"] };
     assert.equal(validateEvidenceRef(ok).ok, true);
-    assert.equal(validateEvidenceRef({ inspectionId: "", resourceIds: ["r1"] }).ok, false);
-    assert.equal(validateEvidenceRef({ inspectionId: "x", resourceIds: [] }).ok, false);
-    assert.equal(validateEvidenceRef({ inspectionId: "x", resourceIds: [""] }).ok, false);
+    let r = validateEvidenceRef({ inspectionId: "", resourceIds: ["r1"] });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /64-hex sha256/);
+    r = validateEvidenceRef({ inspectionId: "a".repeat(64), resourceIds: [] });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /resourceIds must be a non-empty/);
+    r = validateEvidenceRef({ inspectionId: "a".repeat(64), resourceIds: [""] });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /resourceIds\[0\]/);
+    // H3: non-hex inspectionId is rejected
+    r = validateEvidenceRef({ inspectionId: "not-a-hex-string", resourceIds: ["r1"] });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /64-hex sha256/);
 });
 
 test("validatePatchRequest accepts multi-file patch with per-edit paths", () => {
     const valid: PatchRequest = {
         path: "/abs/ws/a.ts",
         edits: [{ oldText: "x", newText: "y" }],
-        evidenceRef: { inspectionId: "i", resourceIds: ["r"] },
+        evidenceRef: { inspectionId: "a".repeat(64), resourceIds: ["r"] },
         toolCallId: "tc1",
     };
     assert.equal(validatePatchRequest(valid).ok, true);
@@ -156,6 +169,43 @@ test("validatePatchRequest allows omitted evidenceRef (auto-inspect) and omitted
     assert.equal(validatePatchRequest(noToolCallId).ok, false);
 });
 
+test("validatePatchRequest rejects edit without oldText and newText (H1)", () => {
+    const baseEdits = [{ path: "/abs/ws/a.ts" }];
+    // missing both fields
+    let r = validatePatchRequest({ edits: [{ path: "/abs/ws/a.ts" }], toolCallId: "tc1" });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /oldText or newText/);
+
+    // both empty strings
+    r = validatePatchRequest({ path: "/abs/ws/a.ts", edits: [{ oldText: "", newText: "" }], toolCallId: "tc1" });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /oldText or newText/);
+
+    // one empty string, other missing
+    r = validatePatchRequest({ path: "/abs/ws/a.ts", edits: [{ oldText: "" }], toolCallId: "tc1" });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /oldText or newText/);
+
+    // valid: oldText present
+    r = validatePatchRequest({ path: "/abs/ws/a.ts", edits: [{ oldText: "x" }], toolCallId: "tc1" });
+    assert.equal(r.ok, true);
+
+    // valid: newText present
+    r = validatePatchRequest({ path: "/abs/ws/a.ts", edits: [{ newText: "y" }], toolCallId: "tc1" });
+    assert.equal(r.ok, true);
+});
+
+test("validatePatchRequest rejects edit with non-hex evidenceRef.inspectionId (H3)", () => {
+    const r = validatePatchRequest({
+        path: "/abs/ws/a.ts",
+        edits: [{ oldText: "x", newText: "y" }],
+        evidenceRef: { inspectionId: "not-hex", resourceIds: ["r"] },
+        toolCallId: "tc1",
+    });
+    assert.equal(r.ok, false);
+    assert.equal((r as any).error, "evidenceRef.inspectionId must be 64-hex sha256");
+});
+
 test("event message codec round-trips", () => {
     const msg: EventMessage = {
         kind: "request",
@@ -174,16 +224,19 @@ test("event message codec round-trips", () => {
 });
 
 test("validateEventMessage rejects unknown kind", () => {
-    const r = validateEventMessage({ kind: "weird", requestId: "r", rpc: "x", payload: {}, schemaVersion: 1 } as any);
+    const r = validateEventMessage({ kind: "weird", requestId: "r", rpc: "x", payload: {}, schemaVersion: PROTOCOL_SCHEMA_VERSION } as any);
     assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /kind/);
 });
 
 test("validateEventMessage rejects wrong schema version", () => {
     const r = validateEventMessage({ kind: "request", requestId: "r", rpc: "x", payload: {}, schemaVersion: 99 } as any);
     assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /schemaVersion/);
 });
 
 test("validateEventMessage rejects missing requestId on request", () => {
-    const r = validateEventMessage({ kind: "request", requestId: "", rpc: "x", payload: {}, schemaVersion: 1 } as any);
+    const r = validateEventMessage({ kind: "request", requestId: "", rpc: "x", payload: {}, schemaVersion: PROTOCOL_SCHEMA_VERSION } as any);
     assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /requestId/);
 });

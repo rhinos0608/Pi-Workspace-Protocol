@@ -1,6 +1,8 @@
 /**
- * Canonical IDs and SHA-256 helpers.
- * Deterministic and side-effect free.
+ * Canonical IDs, SHA-256 helpers, and workspace root resolution.
+ *
+ * Hashes are deterministic and side-effect free. canonicalizeWorkspaceRoot
+ * performs one realpathSync call (filesystem I/O) to resolve symlinks.
  */
 import { realpathSync } from "node:fs";
 import { createHash } from "node:crypto";

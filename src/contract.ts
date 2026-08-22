@@ -35,7 +35,7 @@ function validateResource(r: unknown, idx: number): Result<InspectedResource> {
         return fail(`${where}.resourceId must be a 64-char hex sha256`);
     if (typeof canonicalPath !== "string" || canonicalPath.length === 0)
         return fail(`${where}.canonicalPath must be a non-empty string`);
-    if (canonicalPath !== canonicalPath.split("\0").join("") || canonicalPath.includes("\u0000"))
+    if (canonicalPath !== canonicalPath.split("\0").join(""))
         return fail(`${where}.canonicalPath must not contain NUL`);
     if (kind !== "full" && kind !== "range")
         return fail(`${where}.kind must be 'full' or 'range'`);
@@ -116,8 +116,8 @@ export function validateInspectionEnvelope(input: unknown): Result<WorkspaceEvid
 export function validateEvidenceRef(input: unknown): Result<EvidenceRef> {
     if (!isPlainObject(input)) return fail("evidenceRef must be an object");
     const { inspectionId, resourceIds } = input;
-    if (typeof inspectionId !== "string" || inspectionId.length === 0)
-        return fail("evidenceRef.inspectionId must be a non-empty string");
+    if (typeof inspectionId !== "string" || !HEX64.test(inspectionId))
+        return fail("evidenceRef.inspectionId must be 64-hex sha256");
     if (!Array.isArray(resourceIds) || resourceIds.length === 0)
         return fail("evidenceRef.resourceIds must be a non-empty array");
     for (let i = 0; i < resourceIds.length; i++) {
@@ -137,6 +137,7 @@ export function validatePatchRequest(input: unknown): Result<PatchRequest> {
     // v3: multi-file patch. Each edit may carry its own path.
     // If an edit has no path, it inherits the top-level path — so when the
     // top-level path is omitted, every edit MUST supply its own.
+    // Each edit must provide at least oldText or newText (non-empty).
     let everyEditHasPath = true;
     for (let i = 0; i < edits.length; i++) {
         const e = edits[i];
@@ -148,6 +149,12 @@ export function validatePatchRequest(input: unknown): Result<PatchRequest> {
         } else {
             everyEditHasPath = false;
         }
+        const eOld = (e as { oldText?: unknown }).oldText;
+        const eNew = (e as { newText?: unknown }).newText;
+        const hasOld = typeof eOld === "string" && eOld.length > 0;
+        const hasNew = typeof eNew === "string" && eNew.length > 0;
+        if (!hasOld && !hasNew)
+            return fail(`patch.edits[${i}] must have at least one of oldText or newText (non-empty)`);
     }
     if (path === undefined && !everyEditHasPath)
         return fail("patch.path is required unless every edit provides its own path");

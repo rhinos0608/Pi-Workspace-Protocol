@@ -3,7 +3,7 @@
 Versioned, serializable TypeScript contracts, runtime validators, canonical SHA-256/ID helpers, and a small event-bus RPC layer for the Pi SmartRead/SmartEdit inspect+patch protocol.
 
 - No Pi imports. No filesystem singletons. No `import fs` at module top.
-- Schema version `1`; bumping is a non-breaking change for envelopes when a consumer trusts `schemaVersion`.
+- Schema version `3`; bumping is a non-breaking change for envelopes when a consumer trusts `schemaVersion`.
 - Distributable as `@rhinos0608/pi-workspace-protocol`.
 
 ## Install
@@ -11,17 +11,19 @@ Versioned, serializable TypeScript contracts, runtime validators, canonical SHA-
 ```json
 {
   "dependencies": {
-    "@rhinos0608/pi-workspace-protocol": "github:rhinos0608/Pi-Workspace-Protocol#v0.1.0"
+    "@rhinos0608/pi-workspace-protocol": "github:rhinos0608/Pi-Workspace-Protocol#v0.3.0"
   }
 }
 ```
 
 ## Layout
 
-- `types.ts` — All versioned types (envelope, evidence, patch request, event messages).
-- `ids.ts` — Canonical SHA-256 helpers and ID derivation (resourceId, inspectionId, sessionId).
-- `contract.ts` — Runtime validators and JSON codecs.
-- `rpc.ts` — Request/reply RPC with correlation, timeout, cancellation, and cleanup.
+- `src/index.ts` — Package entry; re-exports all public API.
+- `src/types.ts` — All versioned types (envelope, evidence, patch request, event messages).
+- `src/ids.ts` — Canonical SHA-256 helpers and ID derivation (resourceId, inspectionId, sessionId).
+- `src/contract.ts` — Runtime validators and JSON codecs.
+- `src/rpc.ts` — Request/reply RPC with correlation, timeout, cancellation, and cleanup.
+- `test/` — Node test runner tests for all modules.
 
 ## Build
 
