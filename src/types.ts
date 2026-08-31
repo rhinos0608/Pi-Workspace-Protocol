@@ -153,7 +153,13 @@ export interface PatchRequest {
 
 // ── Event RPC ───────────────────────────────────────────────────────
 
-export type RpcMethod = "resolve_evidence" | "publish_inspection" | "invalidate";
+export type RpcMethod =
+    | "resolve_evidence"
+    | "publish_inspection"
+    | "invalidate"
+    | "language_intelligence_capabilities"
+    | "check_post_edit_diagnostics"
+    | "rename_preview";
 
 export interface EventMessageBase {
     readonly schemaVersion: typeof PROTOCOL_SCHEMA_VERSION;
@@ -180,6 +186,42 @@ export type EventMessage = RequestEvent | ReplyEvent;
 
 export const RPC_CHANNELS = {
     inspectPatch: "pi.workspace.inspect_patch.rpc",
+    languageIntelligence: "pi.workspace.language_intelligence.rpc",
+} as const;
+
+export const LANGUAGE_INTELLIGENCE_RPC_METHODS = {
+    capabilities: "language_intelligence_capabilities",
+    checkPostEditDiagnostics: "check_post_edit_diagnostics",
+    renamePreview: "rename_preview",
 } as const;
 
 export type RpcChannel = (typeof RPC_CHANNELS)[keyof typeof RPC_CHANNELS];
+
+// ── Rename preview DTOs ─────────────────────────────────────────────
+
+export interface LspTextEdit {
+    readonly filePath: string;
+    readonly range: { start: { line: number; character: number }; end: { line: number; character: number } };
+    readonly newText: string;
+}
+
+export interface LspWorkspaceEdit {
+    readonly fileEdits: ReadonlyArray<{
+        readonly filePath: string;
+        readonly edits: ReadonlyArray<LspTextEdit>;
+    }>;
+}
+
+export interface RenamePreviewRequest {
+    readonly filePath: string;
+    readonly line: number;
+    readonly character: number;
+    readonly newName: string;
+}
+
+export interface RenamePreviewResponse {
+    readonly ok: boolean;
+    readonly workspaceEdit?: LspWorkspaceEdit;
+    readonly error?: string;
+    readonly serverDescriptorId?: string;
+}

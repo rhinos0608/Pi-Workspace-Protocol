@@ -240,3 +240,33 @@ test("validateEventMessage rejects missing requestId on request", () => {
     assert.equal(r.ok, false);
     if (!r.ok) assert.match(r.error, /requestId/);
 });
+
+test("validateEventMessage accepts new language-intelligence RPC methods", () => {
+    for (const rpc of ["language_intelligence_capabilities", "check_post_edit_diagnostics"] as const) {
+        const r = validateEventMessage({ kind: "request", requestId: "r", rpc, payload: {}, schemaVersion: PROTOCOL_SCHEMA_VERSION } as any);
+        assert.equal(r.ok, true, `rpc=${rpc} should be accepted`);
+        if (r.ok) assert.equal((r.value as any).rpc, rpc);
+    }
+});
+
+test("validateEventMessage still accepts existing RPC methods (no regression)", () => {
+    for (const rpc of ["resolve_evidence", "publish_inspection", "invalidate"] as const) {
+        const r = validateEventMessage({ kind: "request", requestId: "r", rpc, payload: {}, schemaVersion: PROTOCOL_SCHEMA_VERSION } as any);
+        assert.equal(r.ok, true, `rpc=${rpc} should still be accepted`);
+    }
+    // unknown still rejected
+    const bad = validateEventMessage({ kind: "request", requestId: "r", rpc: "unknown_method", payload: {}, schemaVersion: PROTOCOL_SCHEMA_VERSION } as any);
+    assert.equal(bad.ok, false);
+});
+
+test("validateEventMessage v3 evidence still round-trips unchanged", () => {
+    const env = buildValidEnvelope();
+    // existing validation must still accept valid envelope
+    const r = validateInspectionEnvelope(env);
+    assert.equal(r.ok, true);
+    const msg: EventMessage = { kind: "request", requestId: "abc", rpc: "resolve_evidence", payload: { x: 1 }, schemaVersion: PROTOCOL_SCHEMA_VERSION };
+    const enc = encodeEventMessage(msg);
+    const dec = decodeEventMessage(enc);
+    assert.equal(dec.kind, "request");
+    assert.equal((dec as any).rpc, "resolve_evidence");
+});
