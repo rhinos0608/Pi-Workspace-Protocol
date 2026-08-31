@@ -159,7 +159,10 @@ export type RpcMethod =
     | "invalidate"
     | "language_intelligence_capabilities"
     | "check_post_edit_diagnostics"
-    | "rename_preview";
+    | "rename_preview"
+    | "organize_imports"
+    | "formatting"
+    | "code_action";
 
 export interface EventMessageBase {
     readonly schemaVersion: typeof PROTOCOL_SCHEMA_VERSION;
@@ -193,6 +196,9 @@ export const LANGUAGE_INTELLIGENCE_RPC_METHODS = {
     capabilities: "language_intelligence_capabilities",
     checkPostEditDiagnostics: "check_post_edit_diagnostics",
     renamePreview: "rename_preview",
+    organizeImports: "organize_imports",
+    formatting: "formatting",
+    codeAction: "code_action",
 } as const;
 
 export type RpcChannel = (typeof RPC_CHANNELS)[keyof typeof RPC_CHANNELS];
@@ -222,6 +228,64 @@ export interface RenamePreviewRequest {
 export interface RenamePreviewResponse {
     readonly ok: boolean;
     readonly workspaceEdit?: LspWorkspaceEdit;
+    readonly error?: string;
+    readonly serverDescriptorId?: string;
+}
+
+// ── Organize imports DTOs ───────────────────────────────────────────
+
+export interface OrganizeImportsRequest {
+    readonly filePath: string;
+}
+
+export interface OrganizeImportsResponse {
+    readonly ok: boolean;
+    readonly workspaceEdit?: LspWorkspaceEdit;
+    readonly error?: string;
+    readonly serverDescriptorId?: string;
+}
+
+// ── Formatting DTOs ─────────────────────────────────────────────────
+
+export interface FormattingRequest {
+    readonly filePath: string;
+    readonly tabSize?: number;
+    readonly insertSpaces?: boolean;
+}
+
+export interface FormattingResponse {
+    readonly ok: boolean;
+    readonly workspaceEdit?: LspWorkspaceEdit;
+    readonly error?: string;
+    readonly serverDescriptorId?: string;
+}
+
+// ── Code action DTOs ────────────────────────────────────────────────
+
+export interface CodeActionRequest {
+    readonly filePath: string;
+    readonly line: number;
+    readonly character: number;
+    readonly endLine?: number;
+    readonly endCharacter?: number;
+    readonly diagnostics?: ReadonlyArray<{
+        readonly range: { start: { line: number; character: number }; end: { line: number; character: number } };
+        readonly code?: string;
+        readonly message: string;
+    }>;
+    readonly only?: ReadonlyArray<string>;
+}
+
+export interface CodeActionItem {
+    readonly title: string;
+    readonly kind?: string;
+    readonly workspaceEdit?: LspWorkspaceEdit;
+    readonly isPreferred?: boolean;
+}
+
+export interface CodeActionResponse {
+    readonly ok: boolean;
+    readonly actions?: ReadonlyArray<CodeActionItem>;
     readonly error?: string;
     readonly serverDescriptorId?: string;
 }
