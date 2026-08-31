@@ -175,7 +175,7 @@ export function validateEventMessage(input: unknown): Result<EventMessage> {
     if (kind === "request") {
         const { requestId, rpc, payload } = input;
         if (typeof requestId !== "string" || requestId.length === 0) return fail("request.requestId required");
-        if (typeof rpc !== "string" || (rpc !== "resolve_evidence" && rpc !== "publish_inspection" && rpc !== "invalidate" && rpc !== "language_intelligence_capabilities" && rpc !== "check_post_edit_diagnostics"))
+        if (typeof rpc !== "string" || (rpc !== "resolve_evidence" && rpc !== "publish_inspection" && rpc !== "invalidate" && rpc !== "language_intelligence_capabilities" && rpc !== "check_post_edit_diagnostics" && rpc !== "rename_preview"))
             return fail("request.rpc must be a known method");
         return ok(input as unknown as EventMessage);
     }
