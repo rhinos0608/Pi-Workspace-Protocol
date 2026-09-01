@@ -168,6 +168,142 @@ export function validatePatchRequest(input: unknown): Result<PatchRequest> {
     return ok(input as unknown as PatchRequest);
 }
 
+function isNonEmptyString(v: unknown): boolean { return typeof v === "string" && v.length > 0; }
+function isNonNegInt(v: unknown): boolean { return typeof v === "number" && Number.isInteger(v) && v >= 0; }
+function validateLspRange(v: unknown, where: string): Result<true> {
+  if (!isPlainObject(v)) return fail(`${where} must be an object`);
+  const { start, end } = v as Record<string, unknown>;
+  for (const side of ["start", "end"] as const) {
+    const p = side === "start" ? start : end;
+    if (!isPlainObject(p)) return fail(`${where}.${side} must be an object`);
+    const { line, character } = p as Record<string, unknown>;
+    if (!isNonNegInt(line)) return fail(`${where}.${side}.line must be a non-negative integer`);
+    if (!isNonNegInt(character)) return fail(`${where}.${side}.character must be a non-negative integer`);
+  }
+  return ok(true);
+}
+function validateLspTextEdit(v: unknown, where: string): Result<true> {
+  if (!isPlainObject(v)) return fail(`${where} must be an object`);
+  const { filePath, range, newText } = v as Record<string, unknown>;
+  if (!isNonEmptyString(filePath)) return fail(`${where}.filePath must be a non-empty string`);
+  const r = validateLspRange(range, `${where}.range`);
+  if (!r.ok) return r;
+  if (typeof newText !== "string") return fail(`${where}.newText must be a string`);
+  return ok(true);
+}
+function validateLspWorkspaceEdit(v: unknown, where: string): Result<true> {
+  if (!isPlainObject(v)) return fail(`${where} must be an object`);
+  const { fileEdits } = v as Record<string, unknown>;
+  if (!Array.isArray(fileEdits)) return fail(`${where}.fileEdits must be an array`);
+  for (let i = 0; i < fileEdits.length; i++) {
+    const fe = fileEdits[i];
+    if (!isPlainObject(fe)) return fail(`${where}.fileEdits[${i}] must be an object`);
+    const { filePath, edits } = fe as Record<string, unknown>;
+    if (!isNonEmptyString(filePath)) return fail(`${where}.fileEdits[${i}].filePath must be a non-empty string`);
+    if (!Array.isArray(edits)) return fail(`${where}.fileEdits[${i}].edits must be an array`);
+    for (let j = 0; j < (edits as unknown[]).length; j++) {
+      const r = validateLspTextEdit((edits as unknown[])[j], `${where}.fileEdits[${i}].edits[${j}]`);
+      if (!r.ok) return r;
+    }
+  }
+  return ok(true);
+}
+export function validateRenamePreviewRequest(input: unknown): Result<import("./types.js").RenamePreviewRequest> {
+  if (!isPlainObject(input)) return fail("RenamePreviewRequest must be an object");
+  const { filePath, line, character, newName } = input as Record<string, unknown>;
+  if (!isNonEmptyString(filePath)) return fail("RenamePreviewRequest.filePath must be a non-empty string");
+  if (!isNonNegInt(line)) return fail("RenamePreviewRequest.line must be a non-negative integer");
+  if (!isNonNegInt(character)) return fail("RenamePreviewRequest.character must be a non-negative integer");
+  if (!isNonEmptyString(newName)) return fail("RenamePreviewRequest.newName must be a non-empty string");
+  return ok(input as unknown as import("./types.js").RenamePreviewRequest);
+}
+export function validateRenamePreviewResponse(input: unknown): Result<import("./types.js").RenamePreviewResponse> {
+  if (!isPlainObject(input)) return fail("RenamePreviewResponse must be an object");
+  const { ok: okFlag, workspaceEdit, error, serverDescriptorId } = input as Record<string, unknown>;
+  if (typeof okFlag !== "boolean") return fail("RenamePreviewResponse.ok must be boolean");
+  if (workspaceEdit !== undefined) { const r = validateLspWorkspaceEdit(workspaceEdit, "RenamePreviewResponse.workspaceEdit"); if (!r.ok) return r; }
+  if (error !== undefined && typeof error !== "string") return fail("RenamePreviewResponse.error must be a string if present");
+  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) return fail("RenamePreviewResponse.serverDescriptorId must be a non-empty string if present");
+  return ok(input as unknown as import("./types.js").RenamePreviewResponse);
+}
+export function validateOrganizeImportsRequest(input: unknown): Result<import("./types.js").OrganizeImportsRequest> {
+  if (!isPlainObject(input)) return fail("OrganizeImportsRequest must be an object");
+  const { filePath } = input as Record<string, unknown>;
+  if (!isNonEmptyString(filePath)) return fail("OrganizeImportsRequest.filePath must be a non-empty string");
+  return ok(input as unknown as import("./types.js").OrganizeImportsRequest);
+}
+export function validateOrganizeImportsResponse(input: unknown): Result<import("./types.js").OrganizeImportsResponse> {
+  if (!isPlainObject(input)) return fail("OrganizeImportsResponse must be an object");
+  const { ok: okFlag, workspaceEdit, error, serverDescriptorId } = input as Record<string, unknown>;
+  if (typeof okFlag !== "boolean") return fail("OrganizeImportsResponse.ok must be boolean");
+  if (workspaceEdit !== undefined) { const r = validateLspWorkspaceEdit(workspaceEdit, "OrganizeImportsResponse.workspaceEdit"); if (!r.ok) return r; }
+  if (error !== undefined && typeof error !== "string") return fail("OrganizeImportsResponse.error must be a string if present");
+  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) return fail("OrganizeImportsResponse.serverDescriptorId must be a non-empty string if present");
+  return ok(input as unknown as import("./types.js").OrganizeImportsResponse);
+}
+export function validateFormattingRequest(input: unknown): Result<import("./types.js").FormattingRequest> {
+  if (!isPlainObject(input)) return fail("FormattingRequest must be an object");
+  const { filePath, tabSize, insertSpaces } = input as Record<string, unknown>;
+  if (!isNonEmptyString(filePath)) return fail("FormattingRequest.filePath must be a non-empty string");
+  if (tabSize !== undefined && (!isNonNegInt(tabSize) || (tabSize as number) < 1)) return fail("FormattingRequest.tabSize must be a positive integer if present");
+  if (insertSpaces !== undefined && typeof insertSpaces !== "boolean") return fail("FormattingRequest.insertSpaces must be boolean if present");
+  return ok(input as unknown as import("./types.js").FormattingRequest);
+}
+export function validateFormattingResponse(input: unknown): Result<import("./types.js").FormattingResponse> {
+  if (!isPlainObject(input)) return fail("FormattingResponse must be an object");
+  const { ok: okFlag, workspaceEdit, error, serverDescriptorId } = input as Record<string, unknown>;
+  if (typeof okFlag !== "boolean") return fail("FormattingResponse.ok must be boolean");
+  if (workspaceEdit !== undefined) { const r = validateLspWorkspaceEdit(workspaceEdit, "FormattingResponse.workspaceEdit"); if (!r.ok) return r; }
+  if (error !== undefined && typeof error !== "string") return fail("FormattingResponse.error must be a string if present");
+  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) return fail("FormattingResponse.serverDescriptorId must be a non-empty string if present");
+  return ok(input as unknown as import("./types.js").FormattingResponse);
+}
+export function validateCodeActionRequest(input: unknown): Result<import("./types.js").CodeActionRequest> {
+  if (!isPlainObject(input)) return fail("CodeActionRequest must be an object");
+  const { filePath, line, character, endLine, endCharacter, diagnostics, only } = input as Record<string, unknown>;
+  if (!isNonEmptyString(filePath)) return fail("CodeActionRequest.filePath must be a non-empty string");
+  if (!isNonNegInt(line)) return fail("CodeActionRequest.line must be a non-negative integer");
+  if (!isNonNegInt(character)) return fail("CodeActionRequest.character must be a non-negative integer");
+  if (endLine !== undefined && !isNonNegInt(endLine)) return fail("CodeActionRequest.endLine must be a non-negative integer if present");
+  if (endCharacter !== undefined && !isNonNegInt(endCharacter)) return fail("CodeActionRequest.endCharacter must be a non-negative integer if present");
+  if (diagnostics !== undefined) {
+    if (!Array.isArray(diagnostics)) return fail("CodeActionRequest.diagnostics must be an array if present");
+    for (let i = 0; i < diagnostics.length; i++) {
+      const d = diagnostics[i];
+      if (!isPlainObject(d)) return fail(`CodeActionRequest.diagnostics[${i}] must be an object`);
+      const { range, message, code } = d as Record<string, unknown>;
+      const r = validateLspRange(range, `CodeActionRequest.diagnostics[${i}].range`);
+      if (!r.ok) return r;
+      if (!isNonEmptyString(message)) return fail(`CodeActionRequest.diagnostics[${i}].message must be a non-empty string`);
+      if (code !== undefined && typeof code !== "string") return fail(`CodeActionRequest.diagnostics[${i}].code must be a string if present`);
+    }
+  }
+  if (only !== undefined) {
+    if (!Array.isArray(only)) return fail("CodeActionRequest.only must be an array if present");
+    for (let i = 0; i < only.length; i++) if (!isNonEmptyString((only as unknown[])[i])) return fail(`CodeActionRequest.only[${i}] must be a non-empty string`);
+  }
+  return ok(input as unknown as import("./types.js").CodeActionRequest);
+}
+export function validateCodeActionResponse(input: unknown): Result<import("./types.js").CodeActionResponse> {
+  if (!isPlainObject(input)) return fail("CodeActionResponse must be an object");
+  const { ok: okFlag, actions, error, serverDescriptorId } = input as Record<string, unknown>;
+  if (typeof okFlag !== "boolean") return fail("CodeActionResponse.ok must be boolean");
+  if (actions !== undefined) {
+    if (!Array.isArray(actions)) return fail("CodeActionResponse.actions must be an array if present");
+    for (let i = 0; i < actions.length; i++) {
+      const a = actions[i];
+      if (!isPlainObject(a)) return fail(`CodeActionResponse.actions[${i}] must be an object`);
+      const { title, kind, workspaceEdit, isPreferred } = a as Record<string, unknown>;
+      if (!isNonEmptyString(title)) return fail(`CodeActionResponse.actions[${i}].title must be a non-empty string`);
+      if (kind !== undefined && typeof kind !== "string") return fail(`CodeActionResponse.actions[${i}].kind must be a string if present`);
+      if (workspaceEdit !== undefined) { const r = validateLspWorkspaceEdit(workspaceEdit, `CodeActionResponse.actions[${i}].workspaceEdit`); if (!r.ok) return r; }
+      if (isPreferred !== undefined && typeof isPreferred !== "boolean") return fail(`CodeActionResponse.actions[${i}].isPreferred must be boolean if present`);
+    }
+  }
+  if (error !== undefined && typeof error !== "string") return fail("CodeActionResponse.error must be a string if present");
+  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) return fail("CodeActionResponse.serverDescriptorId must be a non-empty string if present");
+  return ok(input as unknown as import("./types.js").CodeActionResponse);
+}
 export function validateEventMessage(input: unknown): Result<EventMessage> {
     if (!isPlainObject(input)) return fail("event must be an object");
     const { kind, schemaVersion } = input;
