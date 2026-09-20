@@ -2,7 +2,7 @@
 
 Versioned, serializable TypeScript contracts, runtime validators, canonical SHA-256/ID helpers, and a small event-bus RPC layer for the Pi SmartRead/SmartEdit workspace mutation protocol and language intelligence runtime RPC.
 
-- No Pi imports. No filesystem singletons. No `import fs` at module top.
+- No Pi imports. No filesystem singletons. Only `canonicalizeWorkspaceRoot` performs filesystem I/O (`fs.realpathSync`); all other helpers are side-effect-free.
 - Distributable as `@rhinos0608/pi-workspace-protocol`.
 
 ## Overview

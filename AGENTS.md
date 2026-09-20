@@ -15,7 +15,7 @@
 
 ## Schema Versioning
 
-**`PROTOCOL_SCHEMA_VERSION = 4`** (`src/types.ts:6`). Enforced by exact match in `src/contract.ts` — no version negotiation or range checks. Any version bump is a breaking change; both consumers (Pi-SmartRead *and* Pi-SmartEdit) must update in lockstep. Package semver (`0.5.0`) tracks API surface, not wire format. `0.4.0` adds the additive `languageIntelligence` RPC channel (`pi.workspace.language_intelligence.rpc`) with `language_intelligence_capabilities` / `check_post_edit_diagnostics` — `PROTOCOL_SCHEMA_VERSION` stays `4`.
+**`PROTOCOL_SCHEMA_VERSION = 4`** (`src/types.ts:6`). Enforced by exact match in `src/contract.ts` — no version negotiation or range checks. Any version bump is a breaking change; both consumers (Pi-SmartRead *and* Pi-SmartEdit) must update in lockstep. Package semver (`0.5.0`) tracks API surface, not wire format. `0.4.0` adds the additive `languageIntelligence` RPC channel (`pi.workspace.language_intelligence.rpc`) with `language_intelligence_capabilities`, `check_post_edit_diagnostics`, `rename_preview`, `organize_imports`, `formatting`, `code_action` — `PROTOCOL_SCHEMA_VERSION` stays `4`. `0.5.0` generalizes patch lifecycle to mutations (`MutationStatus`/`MutationDetails`, tool `edit` | `transfer`) — still schema `4`.
 
 ## Operational Contracts and Invariants
 
@@ -29,10 +29,10 @@ Evidence envelopes attest to `canonicalPath` as the `realpathSync` result. Pi-Sm
 - Directory-mode inspect returns `map` mode with zero resources — no file authorization is implied.
 
 ### Mutation lifecycle validation
-`MutationStatus` and `MutationDetails` are validated at protocol boundary. Tool-specific request schemas remain SmartEdit-owned. RPC server (`src/rpc.ts`) provides in-flight requestId dedup; timeouts, cancellation, and disposal are handled.
+`MutationStatus` and `MutationDetails` (tool `edit` | `transfer`) are validated at protocol boundary, as are rename/organize-imports/formatting/code-action request/response DTOs (`src/contract.ts`). RPC server (`src/rpc.ts`) provides in-flight requestId dedup; timeouts, cancellation, and disposal are handled.
 
 ### NUL-byte path handling
-`validateLineRange` and resource validators already reject NUL bytes in `canonicalPath` — no file that hits SmartEdit's SHA-256 check can have an injected NUL path.
+Resource validators (`validateResource`) and `validateMutationDetails` reject NUL bytes in `canonicalPath` — no file that hits SmartEdit's SHA-256 check can have an injected NUL path.
 
 ### No filesystem dependency in pure functions
 `sha256OfString`, `sha256OfBytes`, `resourceIdFor`, `inspectionIdFor`, `hashSessionFilePath` are side-effect-free. Only `canonicalizeWorkspaceRoot` performs sync filesystem I/O (`fs.realpathSync`).

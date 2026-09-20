@@ -129,9 +129,6 @@ test("validateCheckPostEditDiagnosticsResponse rejects confirmed with empty diag
 test("validateCheckPostEditDiagnosticsResponse accepts empty with zero diagnostics", () => {
     assert.equal(validateCheckPostEditDiagnosticsResponse({ status: "empty", diagnostics: [], truncated: false }).ok, true);
 });
-test("validateCheckPostEditDiagnosticsResponse accepts empty", () => {
-    assert.equal(validateCheckPostEditDiagnosticsResponse({ status: "empty", diagnostics: [], truncated: false }).ok, true);
-});
 test("validateCheckPostEditDiagnosticsResponse accepts unavailable", () => {
     assert.equal(validateCheckPostEditDiagnosticsResponse({ status: "unavailable", reason: "no-server", diagnostics: [], truncated: false }).ok, true);
 });
