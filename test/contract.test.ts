@@ -267,3 +267,12 @@ test("validateEventMessage v3 evidence still round-trips unchanged", () => {
     assert.equal(dec.kind, "request");
     assert.equal((dec as any).rpc, "resolve_evidence");
 });
+
+test("validateInspectionEnvelope rejects NUL in canonicalWorkspaceRoot", () => {
+    const env = buildValidEnvelope();
+    const bad = validateInspectionEnvelope({ ...env, canonicalWorkspaceRoot: "/abs/ws/\0evil" });
+    assert.equal(bad.ok, false);
+    if (!bad.ok) assert.match(bad.error, /NUL/);
+    assert.equal(validateInspectionEnvelope(env).ok, true);
+    assert.equal(validateInspectionEnvelope({ ...env, canonicalWorkspaceRoot: "/" }).ok, true);
+});

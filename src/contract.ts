@@ -93,6 +93,8 @@ export function validateInspectionEnvelope(input: unknown): Result<WorkspaceEvid
         return fail("workspaceRoot must be a non-empty string");
     if (typeof canonicalWorkspaceRoot !== "string" || canonicalWorkspaceRoot.length === 0)
         return fail("canonicalWorkspaceRoot must be a non-empty string");
+    if (canonicalWorkspaceRoot.includes("\0"))
+        return fail("canonicalWorkspaceRoot must not contain NUL");
     if (typeof createdAt !== "string" || !ISO_DURATION_SAFE.test(createdAt))
         return fail("createdAt must be an ISO-8601 UTC string");
     if (mode !== undefined && mode !== "path" && mode !== "query" && mode !== "symbol" && mode !== "map")
