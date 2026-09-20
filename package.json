@@ -1,7 +1,7 @@
 {
   "name": "@rhinos0608/pi-workspace-protocol",
-  "version": "0.4.0",
-  "description": "Versioned serializable contracts, codecs, ID helpers, and event-RPC types for the Pi SmartRead/SmartEdit inspect+patch protocol.",
+  "version": "0.5.0",
+  "description": "Versioned serializable contracts, codecs, ID helpers, and event-RPC types for the Pi SmartRead/SmartEdit workspace mutation protocol.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

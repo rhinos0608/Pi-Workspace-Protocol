@@ -2,7 +2,7 @@
  * Runtime validators / codecs.
  * Pure functions. No I/O. No Pi imports.
  */
-import { PROTOCOL_SCHEMA_VERSION, type WorkspaceEvidenceEnvelope, type EvidenceRef, type PatchRequest, type EventMessage, type InspectedResource, type InspectMode } from "./types.js";
+import { PROTOCOL_SCHEMA_VERSION, type WorkspaceEvidenceEnvelope, type EvidenceRef, type EventMessage, type InspectedResource, type InspectMode, type MutationStatus, type MutationDetails } from "./types.js";
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -127,48 +127,71 @@ export function validateEvidenceRef(input: unknown): Result<EvidenceRef> {
     return ok(input as unknown as EvidenceRef);
 }
 
-export function validatePatchRequest(input: unknown): Result<PatchRequest> {
-    if (!isPlainObject(input)) return fail("patch request must be an object");
-    const { path, edits, evidenceRef, toolCallId } = input;
-    if (path !== undefined && (typeof path !== "string" || path.length === 0))
-        return fail("patch.path, if present, must be a non-empty string");
-    if (!Array.isArray(edits) || edits.length === 0)
-        return fail("patch.edits must be a non-empty array");
-    // v3: multi-file patch. Each edit may carry its own path.
-    // If an edit has no path, it inherits the top-level path — so when the
-    // top-level path is omitted, every edit MUST supply its own.
-    // Each edit must provide at least oldText or newText (non-empty).
-    let everyEditHasPath = true;
-    for (let i = 0; i < edits.length; i++) {
-        const e = edits[i];
-        if (!isPlainObject(e)) return fail(`patch.edits[${i}] must be an object`);
-        const ep = (e as { path?: unknown }).path;
-        if (ep !== undefined) {
-            if (typeof ep !== "string" || ep.length === 0)
-                return fail(`patch.edits[${i}].path must be a non-empty string if present`);
-        } else {
-            everyEditHasPath = false;
+export function validateMutationStatus(input: unknown): Result<MutationStatus> {
+    if (!isPlainObject(input)) return fail("mutation status must be an object");
+    const { kind, reason, phase } = input;
+    if (kind === "applied") {
+        if ("reason" in input || "phase" in input) return fail("mutation status applied must not include reason or phase");
+        return ok(input as MutationStatus);
+    }
+    if (kind === "rejected") {
+        if ("phase" in input) return fail("mutation status rejected must not include phase");
+        if (reason !== "stale" && reason !== "coverage" && reason !== "conflict" && reason !== "approval" && reason !== "session") return fail("mutation status rejected.reason must be known");
+        return ok(input as MutationStatus);
+    }
+    if (kind === "failed") {
+        if ("reason" in input) return fail("mutation status failed must not include reason");
+        if (phase !== "stage" && phase !== "write" && phase !== "verify") return fail("mutation status failed.phase must be known");
+        return ok(input as MutationStatus);
+    }
+    return fail("mutation status.kind must be known");
+}
+
+export function validateMutationDetails(input: unknown): Result<MutationDetails> {
+    if (!isPlainObject(input)) return fail("mutation details must be an object");
+    const { tool, status, toolCallId, evidenceRef, usedEvidence, changedResources, postEditEvidence, checks, diagnostics, rollback, error } = input;
+    if (tool !== "edit" && tool !== "transfer") return fail("mutation details.tool must be 'edit' or 'transfer'");
+    const s = validateMutationStatus(status); if (!s.ok) return s;
+    if (!isNonEmptyString(toolCallId)) return fail("mutation details.toolCallId must be a non-empty string");
+    const e = validateEvidenceRef(evidenceRef); if (!e.ok) return e;
+    if (!Array.isArray(usedEvidence) || !isDenseArray(usedEvidence) || usedEvidence.some((v) => !isNonEmptyString(v))) return fail("mutation details.usedEvidence must be an array of non-empty strings");
+    if (!Array.isArray(changedResources) || !isDenseArray(changedResources)) return fail("mutation details.changedResources must be an array");
+    for (let i = 0; i < changedResources.length; i++) {
+        const r = changedResources[i];
+        const where = `mutation details.changedResources[${i}]`;
+        if (!isPlainObject(r)) return fail(`${where} must be an object`);
+        if (!isNonEmptyString(r.resourceId) || typeof r.canonicalPath !== "string" || r.canonicalPath.length === 0 || r.canonicalPath.includes("\0") || typeof r.fullFileSha256 !== "string" || !HEX64.test(r.fullFileSha256)) return fail(`${where} is invalid`);
+        const coverage = validateCoverage(r.coverage, `${where}.coverage`); if (!coverage.ok) return coverage;
+        if (r.newFullFileSha256 !== undefined && (typeof r.newFullFileSha256 !== "string" || !HEX64.test(r.newFullFileSha256))) return fail(`${where}.newFullFileSha256 must be a 64-hex sha256 if present`);
+    }
+    if (postEditEvidence !== undefined && (!isPlainObject(postEditEvidence) || typeof postEditEvidence.fullFileSha256 !== "string" || !HEX64.test(postEditEvidence.fullFileSha256) || !isNonNegInt(postEditEvidence.lineCount) || !isNonNegInt(postEditEvidence.byteLength))) return fail("mutation details.postEditEvidence is invalid");
+    if (!isPlainObject(checks)) return fail("mutation details.checks must be an object");
+    for (const field of ["blocking", "completed", "advisory", "skipped", "timedOut"] as const) {
+        const records = checks[field];
+        if (!Array.isArray(records) || !isDenseArray(records)) return fail(`mutation details.checks.${field} must be an array`);
+        for (let i = 0; i < records.length; i++) {
+            const record = records[i];
+            const where = `mutation details.checks.${field}[${i}]`;
+            if (!isPlainObject(record) || !isNonEmptyString(record.id) || (record.outcome !== "pass" && record.outcome !== "fail" && record.outcome !== "skipped" && record.outcome !== "timeout") || (record.detail !== undefined && typeof record.detail !== "string")) return fail(`${where} is invalid`);
         }
-        const eOld = (e as { oldText?: unknown }).oldText;
-        const eNew = (e as { newText?: unknown }).newText;
-        const hasOld = typeof eOld === "string" && eOld.length > 0;
-        const hasNew = typeof eNew === "string" && eNew.length > 0;
-        if (!hasOld && !hasNew)
-            return fail(`patch.edits[${i}] must have at least one of oldText or newText (non-empty)`);
     }
-    if (path === undefined && !everyEditHasPath)
-        return fail("patch.path is required unless every edit provides its own path");
-    if (typeof toolCallId !== "string" || toolCallId.length === 0)
-        return fail("patch.toolCallId must be a non-empty string");
-    // evidenceRef is optional: omitted means auto-inspect. If present, validate it.
-    if (evidenceRef !== undefined) {
-        const er = validateEvidenceRef(evidenceRef);
-        if (!er.ok) return er;
-    }
-    return ok(input as unknown as PatchRequest);
+    if (!Array.isArray(diagnostics) || !isDenseArray(diagnostics) || diagnostics.some((v) => typeof v !== "string")) return fail("mutation details.diagnostics must be an array of strings");
+    if (rollback !== undefined && (!isPlainObject(rollback) || typeof rollback.ok !== "boolean" || (rollback.reason !== undefined && typeof rollback.reason !== "string"))) return fail("mutation details.rollback is invalid");
+    if (error !== undefined && typeof error !== "string") return fail("mutation details.error must be a string");
+    return ok(input as unknown as MutationDetails);
+}
+
+function validateCoverage(v: unknown, where: string): Result<true> {
+    if (v !== "full-file" && v !== "line-range" && v !== "search-match" && v !== "metadata-only")
+        return fail(`${where} must be 'full-file', 'line-range', 'search-match', or 'metadata-only'`);
+    return ok(true);
 }
 
 function isNonEmptyString(v: unknown): boolean { return typeof v === "string" && v.length > 0; }
+function isDenseArray(v: readonly unknown[]): boolean {
+    for (let index = 0; index < v.length; index++) if (!(index in v)) return false;
+    return true;
+}
 function isNonNegInt(v: unknown): boolean { return typeof v === "number" && Number.isInteger(v) && v >= 0; }
 function validateLspRange(v: unknown, where: string): Result<true> {
   if (!isPlainObject(v)) return fail(`${where} must be an object`);

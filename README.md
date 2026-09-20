@@ -1,20 +1,20 @@
 # Pi Workspace Protocol
 
-Versioned, serializable TypeScript contracts, runtime validators, canonical SHA-256/ID helpers, and a small event-bus RPC layer for the Pi SmartRead/SmartEdit inspect+patch protocol and language intelligence runtime RPC.
+Versioned, serializable TypeScript contracts, runtime validators, canonical SHA-256/ID helpers, and a small event-bus RPC layer for the Pi SmartRead/SmartEdit workspace mutation protocol and language intelligence runtime RPC.
 
 - No Pi imports. No filesystem singletons. No `import fs` at module top.
 - Distributable as `@rhinos0608/pi-workspace-protocol`.
 
 ## Overview
 
-Versioned TypeScript contracts for the Pi SmartRead/SmartEdit inspect+patch protocol plus language intelligence runtime RPC. Provides envelope/evidence/patch/event types, canonical ID derivation, runtime validators with JSON codecs, and a correlated request/reply RPC layer over an event-bus surface.
+Versioned TypeScript contracts for the Pi SmartRead/SmartEdit workspace mutation protocol plus language intelligence runtime RPC. Provides envelope/evidence/mutation/event types, canonical ID derivation, runtime validators with JSON codecs, and a correlated request/reply RPC layer over an event-bus surface.
 
 ## Install
 
 ```json
 {
   "dependencies": {
-    "@rhinos0608/pi-workspace-protocol": "github:rhinos0608/Pi-Workspace-Protocol#v0.4.0"
+    "@rhinos0608/pi-workspace-protocol": "github:rhinos0608/Pi-Workspace-Protocol#v0.5.0"
   }
 }
 ```
@@ -22,7 +22,7 @@ Versioned TypeScript contracts for the Pi SmartRead/SmartEdit inspect+patch prot
 ## Layout
 
 - `src/index.ts` — Package entry; re-exports all public API.
-- `src/types.ts` — All versioned types (envelope, evidence, patch request, event messages, language intelligence DTOs).
+- `src/types.ts` — All versioned types (envelope, evidence, mutation lifecycle, event messages, language intelligence DTOs).
 - `src/ids.ts` — Canonical SHA-256 helpers and ID derivation (`sha256OfString`, `sha256OfBytes`, `sha256OfFileContents`, `resourceIdFor`, `inspectionIdFor`, `hashSessionFilePath`, `canonicalizeWorkspaceRoot`).
 - `src/contract.ts` — Runtime validators and JSON codecs for all DTOs.
 - `src/rpc.ts` — Request/reply RPC with correlation, timeout, cancellation (`createRpcServer`, `createRpcClient`, `BusLike`).
@@ -68,16 +68,16 @@ Additional language-intelligence types in `src/language-intelligence.ts`: `Langu
 
 `src/contract.ts` exports validators for every request/response DTO:
 
-`validateInspectionEnvelope`, `validateEvidenceRef`, `validatePatchRequest`, `validateEventMessage`, `encodeEventMessage`, `decodeEventMessage`, `validateRenamePreviewRequest/Response`, `validateOrganizeImportsRequest/Response`, `validateFormattingRequest/Response`, `validateCodeActionRequest/Response`.
+`validateInspectionEnvelope`, `validateEvidenceRef`, `validateMutationStatus`, `validateMutationDetails`, `validateEventMessage`, `encodeEventMessage`, `decodeEventMessage`, `validateRenamePreviewRequest/Response`, `validateOrganizeImportsRequest/Response`, `validateFormattingRequest/Response`, `validateCodeActionRequest/Response`.
 
 `src/language-intelligence.ts` exports `validateLanguageDiagnostic`, `validateLanguageIntelligenceCapabilitiesRequest/Response`, `validateCheckPostEditDiagnosticsRequest/Response`.
 
-All validators return `{ ok: true, value } | { ok: false, error }` and enforce exact field shapes, hex/format constraints, and cross-field invariants.
+All validators return `{ ok: true, value } | { ok: false, error }` and enforce required field shapes, hex/format constraints, and cross-field invariants.
 
 ## Schema Versioning
 
-- Schema version `3` (`PROTOCOL_SCHEMA_VERSION = 3`); any bump is a **breaking change** — validators require exact `schemaVersion` equality (`src/contract.ts`), so both consumers must update in lockstep.
-- Version `0.4.0` added the language intelligence channel and its DTOs additively (no schema bump needed).
+- Schema version `4` (`PROTOCOL_SCHEMA_VERSION = 4`); any bump is a **breaking change** — validators require exact `schemaVersion` equality (`src/contract.ts`), so both consumers must update in lockstep.
+- Version `0.5.0` generalizes mutation lifecycle contracts and added the language intelligence channel and its DTOs additively (no schema bump needed).
 
 ## Build / Test
 

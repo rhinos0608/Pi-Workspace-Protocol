@@ -4,7 +4,8 @@ import {
     PROTOCOL_SCHEMA_VERSION,
     validateInspectionEnvelope,
     validateEvidenceRef,
-    validatePatchRequest,
+    validateMutationStatus,
+    validateMutationDetails,
     validateEventMessage,
     encodeEventMessage,
     decodeEventMessage,
@@ -12,7 +13,7 @@ import {
 import type {
     WorkspaceEvidenceEnvelope,
     EvidenceRef,
-    PatchRequest,
+    MutationDetails,
     EventMessage,
 } from "../src/index.js";
 
@@ -38,8 +39,85 @@ function buildValidEnvelope(): WorkspaceEvidenceEnvelope {
     };
 }
 
-test("PROTOCOL_SCHEMA_VERSION is 3", () => {
-    assert.equal(PROTOCOL_SCHEMA_VERSION, 3);
+test("PROTOCOL_SCHEMA_VERSION is 4", () => {
+    assert.equal(PROTOCOL_SCHEMA_VERSION, 4);
+});
+
+test("mutation validators accept edit and transfer lifecycle details", () => {
+    for (const tool of ["edit", "transfer"] as const) {
+        const status = validateMutationStatus({ kind: "applied" });
+        assert.equal(status.ok, true);
+        const details: MutationDetails = {
+            tool, status: { kind: "applied" }, toolCallId: "tc1",
+            evidenceRef: { inspectionId: "a".repeat(64), resourceIds: ["r1"] },
+            usedEvidence: ["r1"], changedResources: [],
+            checks: { blocking: [], completed: [], advisory: [], skipped: [], timedOut: [] },
+            diagnostics: [],
+        };
+        assert.equal(validateMutationDetails(details).ok, true);
+    }
+});
+
+test("mutation details rejects malformed changed resource coverage", () => {
+    const details = {
+        tool: "edit", status: { kind: "applied" }, toolCallId: "tc1",
+        evidenceRef: { inspectionId: "a".repeat(64), resourceIds: ["r1"] },
+        usedEvidence: ["r1"],
+        changedResources: [{ resourceId: "r1", canonicalPath: "/abs/ws/a.ts", fullFileSha256: "d".repeat(64), coverage: "invalid" }],
+        checks: { blocking: [], completed: [], advisory: [], skipped: [], timedOut: [] }, diagnostics: [],
+    };
+    assert.equal(validateMutationDetails(details).ok, false);
+});
+
+test("mutation details rejects malformed lifecycle check records and outcomes", () => {
+    const base = {
+        tool: "edit", status: { kind: "applied" }, toolCallId: "tc1",
+        evidenceRef: { inspectionId: "a".repeat(64), resourceIds: ["r1"] }, usedEvidence: ["r1"], changedResources: [], diagnostics: [],
+    };
+    assert.equal(validateMutationDetails({ ...base, checks: { blocking: [{ id: "", outcome: "pass" }], completed: [], advisory: [], skipped: [], timedOut: [] } }).ok, false);
+    assert.equal(validateMutationDetails({ ...base, checks: { blocking: [{ id: "check", outcome: "unknown" }], completed: [], advisory: [], skipped: [], timedOut: [] } }).ok, false);
+});
+
+test("mutation details rejects invalid rollback reason", () => {
+    const details = {
+        tool: "edit", status: { kind: "applied" }, toolCallId: "tc1",
+        evidenceRef: { inspectionId: "a".repeat(64), resourceIds: ["r1"] }, usedEvidence: ["r1"], changedResources: [],
+        checks: { blocking: [], completed: [], advisory: [], skipped: [], timedOut: [] }, diagnostics: [], rollback: { ok: false, reason: 42 },
+    };
+    assert.equal(validateMutationDetails(details).ok, false);
+});
+
+test("mutation status rejects unknown reason", () => {
+    assert.equal(validateMutationStatus({ kind: "rejected", reason: "patch" }).ok, false);
+});
+
+test("mutation status rejects contradictory discriminant fields", () => {
+    assert.equal(validateMutationStatus({ kind: "applied", reason: "stale" }).ok, false);
+    assert.equal(validateMutationStatus({ kind: "applied", phase: "write" }).ok, false);
+    assert.equal(validateMutationStatus({ kind: "rejected", reason: "stale", phase: "write" }).ok, false);
+    assert.equal(validateMutationStatus({ kind: "failed", phase: "write", reason: "stale" }).ok, false);
+});
+
+test("mutation details rejects NUL paths and sparse nested arrays", () => {
+    const base = {
+        tool: "edit", status: { kind: "applied" }, toolCallId: "tc1",
+        evidenceRef: { inspectionId: "a".repeat(64), resourceIds: ["r1"] },
+        usedEvidence: ["r1"], changedResources: [],
+        checks: { blocking: [], completed: [], advisory: [], skipped: [], timedOut: [] }, diagnostics: [],
+    };
+    assert.equal(validateMutationDetails({ ...base, changedResources: [{ resourceId: "r1", canonicalPath: "/abs/ws/\0a.ts", fullFileSha256: "d".repeat(64), coverage: "full-file" }] }).ok, false);
+
+    const sparseUsed = [] as string[];
+    sparseUsed.length = 1;
+    assert.equal(validateMutationDetails({ ...base, usedEvidence: sparseUsed }).ok, false);
+    const sparseDiagnostics = [] as string[];
+    sparseDiagnostics.length = 1;
+    assert.equal(validateMutationDetails({ ...base, diagnostics: sparseDiagnostics }).ok, false);
+    for (const field of ["blocking", "completed", "advisory", "skipped", "timedOut"] as const) {
+        const sparseChecks = { ...base.checks, [field]: [] as unknown[] };
+        sparseChecks[field].length = 1;
+        assert.equal(validateMutationDetails({ ...base, checks: sparseChecks }).ok, false, `sparse ${field} must reject`);
+    }
 });
 
 test("validateInspectionEnvelope accepts a valid envelope", () => {
@@ -123,87 +201,6 @@ test("validateEvidenceRef requires inspectionId (64-hex) and resourceIds", () =>
     r = validateEvidenceRef({ inspectionId: "not-a-hex-string", resourceIds: ["r1"] });
     assert.equal(r.ok, false);
     if (!r.ok) assert.match(r.error, /64-hex sha256/);
-});
-
-test("validatePatchRequest accepts multi-file patch with per-edit paths", () => {
-    const valid: PatchRequest = {
-        path: "/abs/ws/a.ts",
-        edits: [{ oldText: "x", newText: "y" }],
-        evidenceRef: { inspectionId: "a".repeat(64), resourceIds: ["r"] },
-        toolCallId: "tc1",
-    };
-    assert.equal(validatePatchRequest(valid).ok, true);
-
-    // empty edits forbidden
-    const bad1: PatchRequest = { ...valid, edits: [] };
-    assert.equal(validatePatchRequest(bad1).ok, false);
-
-    // multi-file (different path in an edit) now accepted in v3
-    const multi: PatchRequest = { ...valid, edits: [{ oldText: "a", newText: "b" }, { oldText: "c", newText: "d", path: "/abs/ws/other.ts" }] };
-    assert.equal(validatePatchRequest(multi).ok, true);
-
-    // missing path
-    const bad2: PatchRequest = { ...valid, path: "" };
-    assert.equal(validatePatchRequest(bad2).ok, false);
-});
-
-test("validatePatchRequest allows omitted evidenceRef (auto-inspect) and omitted path when every edit has one", () => {
-    const autoInspect = {
-        edits: [{ oldText: "x", newText: "y", path: "/abs/ws/a.ts" }],
-        toolCallId: "tc1",
-    };
-    assert.equal(validatePatchRequest(autoInspect).ok, true);
-
-    // path omitted at top level, but not every edit has one -> reject
-    const missingPath = {
-        edits: [{ oldText: "x", newText: "y", path: "/abs/ws/a.ts" }, { oldText: "a", newText: "b" }],
-        toolCallId: "tc1",
-    };
-    assert.equal(validatePatchRequest(missingPath).ok, false);
-
-    // missing toolCallId always rejected
-    const noToolCallId = {
-        path: "/abs/ws/a.ts",
-        edits: [{ oldText: "x", newText: "y" }],
-    };
-    assert.equal(validatePatchRequest(noToolCallId).ok, false);
-});
-
-test("validatePatchRequest rejects edit without oldText and newText (H1)", () => {
-    const baseEdits = [{ path: "/abs/ws/a.ts" }];
-    // missing both fields
-    let r = validatePatchRequest({ edits: [{ path: "/abs/ws/a.ts" }], toolCallId: "tc1" });
-    assert.equal(r.ok, false);
-    if (!r.ok) assert.match(r.error, /oldText or newText/);
-
-    // both empty strings
-    r = validatePatchRequest({ path: "/abs/ws/a.ts", edits: [{ oldText: "", newText: "" }], toolCallId: "tc1" });
-    assert.equal(r.ok, false);
-    if (!r.ok) assert.match(r.error, /oldText or newText/);
-
-    // one empty string, other missing
-    r = validatePatchRequest({ path: "/abs/ws/a.ts", edits: [{ oldText: "" }], toolCallId: "tc1" });
-    assert.equal(r.ok, false);
-    if (!r.ok) assert.match(r.error, /oldText or newText/);
-
-    // valid: oldText present
-    r = validatePatchRequest({ path: "/abs/ws/a.ts", edits: [{ oldText: "x" }], toolCallId: "tc1" });
-    assert.equal(r.ok, true);
-
-    // valid: newText present
-    r = validatePatchRequest({ path: "/abs/ws/a.ts", edits: [{ newText: "y" }], toolCallId: "tc1" });
-    assert.equal(r.ok, true);
-});
-
-test("validatePatchRequest rejects edit with non-hex evidenceRef.inspectionId (H3)", () => {
-    const r = validatePatchRequest({
-        path: "/abs/ws/a.ts",
-        edits: [{ oldText: "x", newText: "y" }],
-        evidenceRef: { inspectionId: "not-hex", resourceIds: ["r"] },
-        toolCallId: "tc1",
-    });
-    assert.equal(r.ok, false);
-    assert.equal((r as any).error, "evidenceRef.inspectionId must be 64-hex sha256");
 });
 
 test("event message codec round-trips", () => {
