@@ -4,3 +4,5 @@ dist/
 .DS_Store
 .pi-smartread.tags.cache/
 .pi-smartread/.smart-edit-undo/
+.smart-edit-undo/
+.pi-smartread/
