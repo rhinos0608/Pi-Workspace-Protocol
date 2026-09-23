@@ -3,7 +3,12 @@
  * No Pi imports. No filesystem state. No singletons.
  */
 
-export const PROTOCOL_SCHEMA_VERSION = 4 as const;
+export const PROTOCOL_SCHEMA_VERSION = 5 as const;
+
+/** LSP request timeout envelope (ms). Applies to all language-intelligence request DTOs invoking LSP via optional `timeoutMs`. */
+export const LSP_TIMEOUT_MS_MIN = 250 as const;
+export const LSP_TIMEOUT_MS_DEFAULT = 10000 as const;
+export const LSP_TIMEOUT_MS_MAX = 30000 as const;
 
 /** sha256 hex digest (64 chars) */
 export type Sha256 = string;
@@ -192,6 +197,7 @@ export interface LspTextEdit {
 }
 
 export interface LspWorkspaceEdit {
+    readonly positionEncoding: "utf-16";
     readonly fileEdits: ReadonlyArray<{
         readonly filePath: string;
         readonly edits: ReadonlyArray<LspTextEdit>;
@@ -203,6 +209,7 @@ export interface RenamePreviewRequest {
     readonly line: number;
     readonly character: number;
     readonly newName: string;
+    readonly timeoutMs?: number;
 }
 
 export interface RenamePreviewResponse {
@@ -216,6 +223,7 @@ export interface RenamePreviewResponse {
 
 export interface OrganizeImportsRequest {
     readonly filePath: string;
+    readonly timeoutMs?: number;
 }
 
 export interface OrganizeImportsResponse {
@@ -229,6 +237,8 @@ export interface OrganizeImportsResponse {
 
 export interface FormattingRequest {
     readonly filePath: string;
+    /** Optional LSP timeout in ms. Integer 250..30000. */
+    readonly timeoutMs?: number;
     readonly tabSize?: number;
     readonly insertSpaces?: boolean;
 }
@@ -254,6 +264,7 @@ export interface CodeActionRequest {
         readonly message: string;
     }>;
     readonly only?: ReadonlyArray<string>;
+    readonly timeoutMs?: number;
 }
 
 export interface CodeActionItem {

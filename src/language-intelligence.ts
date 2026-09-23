@@ -13,6 +13,7 @@ export interface CheckPostEditDiagnosticsRequest {
     readonly expectedContentSha256: string; // 64-char lowercase hex
     readonly waitMs: number; // integer 0..3000
     readonly maxDiagnostics: number; // integer 1..100
+    readonly timeoutMs?: number;
 }
 
 export interface LanguageDiagnostic {
@@ -121,7 +122,7 @@ export function validateLanguageIntelligenceCapabilitiesResponse(
 
 export function validateCheckPostEditDiagnosticsRequest(v: unknown): ValidationResult<CheckPostEditDiagnosticsRequest> {
     if (!isPlainObject(v)) return fail("CheckPostEditDiagnosticsRequest must be an object");
-    const { canonicalPath, canonicalWorkspaceRoot, expectedContentSha256, waitMs, maxDiagnostics } = v as Record<string, unknown>;
+    const { canonicalPath, canonicalWorkspaceRoot, expectedContentSha256, waitMs, maxDiagnostics, timeoutMs } = v as Record<string, unknown>;
 
     if (typeof canonicalPath !== "string" || canonicalPath.length === 0)
         return fail("CheckPostEditDiagnosticsRequest.canonicalPath must be a non-empty string");
@@ -142,6 +143,10 @@ export function validateCheckPostEditDiagnosticsRequest(v: unknown): ValidationR
 
     if (typeof maxDiagnostics !== "number" || !Number.isInteger(maxDiagnostics) || maxDiagnostics < 1 || maxDiagnostics > 100) {
         return fail("CheckPostEditDiagnosticsRequest.maxDiagnostics must be an integer 1..100");
+    }
+
+    if (timeoutMs !== undefined && (typeof timeoutMs !== "number" || !Number.isInteger(timeoutMs) || timeoutMs < 250 || timeoutMs > 30000)) {
+        return fail("CheckPostEditDiagnosticsRequest.timeoutMs must be an integer 250..30000 if present");
     }
 
     return ok(v as unknown as CheckPostEditDiagnosticsRequest);

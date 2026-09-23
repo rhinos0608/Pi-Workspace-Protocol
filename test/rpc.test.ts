@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRpcClient, createRpcServer } from "../src/rpc.js";
+import { PROTOCOL_SCHEMA_VERSION } from "../src/index.js";
 import type { EventMessage } from "../src/index.js";
 
 type Emitted = { channel: string; data: unknown };
@@ -116,7 +117,7 @@ test("rpc validates message schema and ignores invalid", async () => {
 
     // Send an invalid message directly
     bus.emit("test.rpc", { kind: "garbage" });
-    bus.emit("test.rpc", { kind: "request", requestId: "r1", rpc: "resolve_evidence", payload: {}, schemaVersion: 4 });
+    bus.emit("test.rpc", { kind: "request", requestId: "r1", rpc: "resolve_evidence", payload: {}, schemaVersion: PROTOCOL_SCHEMA_VERSION });
     // give server a moment
     await new Promise((r) => setTimeout(r, 20));
     assert.equal(seen.length, 1);

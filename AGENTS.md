@@ -15,7 +15,7 @@
 
 ## Schema Versioning
 
-**`PROTOCOL_SCHEMA_VERSION = 4`** (`src/types.ts:6`). Enforced by exact match in `src/contract.ts` — no version negotiation or range checks. Any version bump is a breaking change; both consumers (Pi-SmartRead *and* Pi-SmartEdit) must update in lockstep. Package semver (`0.5.0`) tracks API surface, not wire format. `0.4.0` adds the additive `languageIntelligence` RPC channel (`pi.workspace.language_intelligence.rpc`) with `language_intelligence_capabilities`, `check_post_edit_diagnostics`, `rename_preview`, `organize_imports`, `formatting`, `code_action` — `PROTOCOL_SCHEMA_VERSION` stays `4`. `0.5.0` generalizes patch lifecycle to mutations (`MutationStatus`/`MutationDetails`, tool `edit` | `transfer`) — still schema `4`.
+**`PROTOCOL_SCHEMA_VERSION = 5`** (`src/types.ts:6`). Enforced by exact match in `src/contract.ts` — no version negotiation or range checks. Any version bump is a breaking change; both consumers (Pi-SmartRead *and* Pi-SmartEdit) must update in lockstep. Package semver (`0.6.0`) tracks API surface, not wire format. `0.6.0` adds the `timeoutMs` LSP envelope (integer 250..30000) on all language-intelligence request DTOs and requires `LspWorkspaceEdit.positionEncoding: "utf-16"` — schema `5`.
 
 ## Operational Contracts and Invariants
 

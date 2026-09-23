@@ -3,4 +3,4 @@ dist/
 *.log
 .DS_Store
 .pi-smartread.tags.cache/
-.pi-smartread/
+.pi-smartread/.smart-edit-undo/

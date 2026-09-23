@@ -216,9 +216,16 @@ function validateLspTextEdit(v: unknown, where: string): Result<true> {
   if (typeof newText !== "string") return fail(`${where}.newText must be a string`);
   return ok(true);
 }
+function validateTimeoutMs(v: unknown, where: string): Result<true> {
+  if (v === undefined) return ok(true);
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 250 || v > 30000)
+    return fail(`${where}.timeoutMs must be an integer 250..30000 if present`);
+  return ok(true);
+}
 function validateLspWorkspaceEdit(v: unknown, where: string): Result<true> {
   if (!isPlainObject(v)) return fail(`${where} must be an object`);
-  const { fileEdits } = v as Record<string, unknown>;
+  const { positionEncoding, fileEdits } = v as Record<string, unknown>;
+  if (positionEncoding !== "utf-16") return fail(`${where}.positionEncoding must be 'utf-16'`);
   if (!Array.isArray(fileEdits)) return fail(`${where}.fileEdits must be an array`);
   for (let i = 0; i < fileEdits.length; i++) {
     const fe = fileEdits[i];
@@ -235,11 +242,12 @@ function validateLspWorkspaceEdit(v: unknown, where: string): Result<true> {
 }
 export function validateRenamePreviewRequest(input: unknown): Result<import("./types.js").RenamePreviewRequest> {
   if (!isPlainObject(input)) return fail("RenamePreviewRequest must be an object");
-  const { filePath, line, character, newName } = input as Record<string, unknown>;
+  const { filePath, line, character, newName, timeoutMs } = input as Record<string, unknown>;
   if (!isNonEmptyString(filePath)) return fail("RenamePreviewRequest.filePath must be a non-empty string");
   if (!isNonNegInt(line)) return fail("RenamePreviewRequest.line must be a non-negative integer");
   if (!isNonNegInt(character)) return fail("RenamePreviewRequest.character must be a non-negative integer");
   if (!isNonEmptyString(newName)) return fail("RenamePreviewRequest.newName must be a non-empty string");
+  { const r = validateTimeoutMs(timeoutMs, "RenamePreviewRequest"); if (!r.ok) return r; }
   return ok(input as unknown as import("./types.js").RenamePreviewRequest);
 }
 export function validateRenamePreviewResponse(input: unknown): Result<import("./types.js").RenamePreviewResponse> {
@@ -253,8 +261,9 @@ export function validateRenamePreviewResponse(input: unknown): Result<import("./
 }
 export function validateOrganizeImportsRequest(input: unknown): Result<import("./types.js").OrganizeImportsRequest> {
   if (!isPlainObject(input)) return fail("OrganizeImportsRequest must be an object");
-  const { filePath } = input as Record<string, unknown>;
+  const { filePath, timeoutMs } = input as Record<string, unknown>;
   if (!isNonEmptyString(filePath)) return fail("OrganizeImportsRequest.filePath must be a non-empty string");
+  { const r = validateTimeoutMs(timeoutMs, "OrganizeImportsRequest"); if (!r.ok) return r; }
   return ok(input as unknown as import("./types.js").OrganizeImportsRequest);
 }
 export function validateOrganizeImportsResponse(input: unknown): Result<import("./types.js").OrganizeImportsResponse> {
@@ -268,10 +277,11 @@ export function validateOrganizeImportsResponse(input: unknown): Result<import("
 }
 export function validateFormattingRequest(input: unknown): Result<import("./types.js").FormattingRequest> {
   if (!isPlainObject(input)) return fail("FormattingRequest must be an object");
-  const { filePath, tabSize, insertSpaces } = input as Record<string, unknown>;
+  const { filePath, tabSize, insertSpaces, timeoutMs } = input as Record<string, unknown>;
   if (!isNonEmptyString(filePath)) return fail("FormattingRequest.filePath must be a non-empty string");
   if (tabSize !== undefined && (!isNonNegInt(tabSize) || (tabSize as number) < 1)) return fail("FormattingRequest.tabSize must be a positive integer if present");
   if (insertSpaces !== undefined && typeof insertSpaces !== "boolean") return fail("FormattingRequest.insertSpaces must be boolean if present");
+  { const r = validateTimeoutMs(timeoutMs, "FormattingRequest"); if (!r.ok) return r; }
   return ok(input as unknown as import("./types.js").FormattingRequest);
 }
 export function validateFormattingResponse(input: unknown): Result<import("./types.js").FormattingResponse> {
@@ -285,7 +295,7 @@ export function validateFormattingResponse(input: unknown): Result<import("./typ
 }
 export function validateCodeActionRequest(input: unknown): Result<import("./types.js").CodeActionRequest> {
   if (!isPlainObject(input)) return fail("CodeActionRequest must be an object");
-  const { filePath, line, character, endLine, endCharacter, diagnostics, only } = input as Record<string, unknown>;
+  const { filePath, line, character, endLine, endCharacter, diagnostics, only, timeoutMs } = input as Record<string, unknown>;
   if (!isNonEmptyString(filePath)) return fail("CodeActionRequest.filePath must be a non-empty string");
   if (!isNonNegInt(line)) return fail("CodeActionRequest.line must be a non-negative integer");
   if (!isNonNegInt(character)) return fail("CodeActionRequest.character must be a non-negative integer");
@@ -307,6 +317,7 @@ export function validateCodeActionRequest(input: unknown): Result<import("./type
     if (!Array.isArray(only)) return fail("CodeActionRequest.only must be an array if present");
     for (let i = 0; i < only.length; i++) if (!isNonEmptyString((only as unknown[])[i])) return fail(`CodeActionRequest.only[${i}] must be a non-empty string`);
   }
+  { const r = validateTimeoutMs(timeoutMs, "CodeActionRequest"); if (!r.ok) return r; }
   return ok(input as unknown as import("./types.js").CodeActionRequest);
 }
 export function validateCodeActionResponse(input: unknown): Result<import("./types.js").CodeActionResponse> {
