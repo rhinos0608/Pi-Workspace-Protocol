@@ -14,7 +14,7 @@ Versioned TypeScript contracts for the Pi SmartRead/SmartEdit workspace mutation
 ```json
 {
   "dependencies": {
-    "@rhinos0608/pi-workspace-protocol": "github:rhinos0608/Pi-Workspace-Protocol#v0.5.0"
+    "@rhinos0608/pi-workspace-protocol": "github:rhinos0608/Pi-Workspace-Protocol#v0.6.0"
   }
 }
 ```
@@ -49,20 +49,22 @@ Constants: `RPC_CHANNELS.inspectPatch`, `RPC_CHANNELS.languageIntelligence`, `LA
 All types in `src/types.ts`; validators in `src/contract.ts` / `src/language-intelligence.ts`.
 
 - `LspTextEdit` — `{ filePath: string, range: { start: { line, character }, end: { line, character } }, newText: string }`
-- `LspWorkspaceEdit` — `{ fileEdits: { filePath: string, edits: LspTextEdit[] }[] }`
-- `RenamePreviewRequest` — `{ filePath: string, line: number, character: number, newName: string }`
+- `LspWorkspaceEdit` — `{ positionEncoding: "utf-16" (required), fileEdits: { filePath: string, edits: LspTextEdit[] }[] }`
+- `RenamePreviewRequest` — `{ filePath: string, line: number, character: number, newName: string, timeoutMs?: number }`
 - `RenamePreviewResponse` — `{ ok: boolean, workspaceEdit?: LspWorkspaceEdit, error?: string, serverDescriptorId?: string }`
-- `OrganizeImportsRequest` — `{ filePath: string }`
+- `OrganizeImportsRequest` — `{ filePath: string, timeoutMs?: number }`
 - `OrganizeImportsResponse` — `{ ok: boolean, workspaceEdit?: LspWorkspaceEdit, error?: string, serverDescriptorId?: string }`
-- `FormattingRequest` — `{ filePath: string, tabSize?: number, insertSpaces?: boolean }`
+- `FormattingRequest` — `{ filePath: string, tabSize?: number, insertSpaces?: boolean, timeoutMs?: number }`
 - `FormattingResponse` — `{ ok: boolean, workspaceEdit?: LspWorkspaceEdit, error?: string, serverDescriptorId?: string }`
-- `CodeActionRequest` — `{ filePath: string, line: number, character: number, endLine?: number, endCharacter?: number, diagnostics?: { range, code?, message }[], only?: string[] }`
+- `CodeActionRequest` — `{ filePath: string, line: number, character: number, endLine?: number, endCharacter?: number, diagnostics?: { range, code?, message }[], only?: string[], timeoutMs?: number }`
 - `CodeActionResponse` — `{ ok: boolean, actions?: CodeActionItem[], error?: string, serverDescriptorId?: string }`
 - `CodeActionItem` — `{ title: string, kind?: string, workspaceEdit?: LspWorkspaceEdit, isPreferred?: boolean }`
 - `LANGUAGE_INTELLIGENCE_RPC_METHODS` — constant mapping logical names to wire method strings.
 - `RPC_CHANNELS.languageIntelligence` — channel string `pi.workspace.language_intelligence.rpc`.
 
-Additional language-intelligence types in `src/language-intelligence.ts`: `LanguageIntelligenceCapabilitiesRequest` (`{}`), `LanguageIntelligenceCapabilitiesResponse` (`{ provider: "pi-smartread", capabilities: ("post-edit-diagnostics")[] }`), `CheckPostEditDiagnosticsRequest` (`{ canonicalPath, canonicalWorkspaceRoot, expectedContentSha256, waitMs 0..3000, maxDiagnostics 1..100 }`), `CheckPostEditDiagnosticsResponse` (discriminated union on `status`: `confirmed` | `empty` | `unavailable` | `degraded`), `LanguageDiagnostic` (`{ message, severity 1|2|3|4, range, source }`).
+Additional language-intelligence types in `src/language-intelligence.ts`: `LanguageIntelligenceCapabilitiesRequest` (`{}`), `LanguageIntelligenceCapabilitiesResponse` (`{ provider: "pi-smartread", capabilities: ("post-edit-diagnostics")[] }`), `CheckPostEditDiagnosticsRequest` (`{ canonicalPath, canonicalWorkspaceRoot, expectedContentSha256, waitMs 0..3000, maxDiagnostics 1..100, timeoutMs? 250..30000 }`), `CheckPostEditDiagnosticsResponse` (discriminated union on `status`: `confirmed` | `empty` | `unavailable` | `degraded`), `LanguageDiagnostic` (`{ message, severity 1|2|3|4, range, source }`).
+
+`timeoutMs` is an optional LSP timeout envelope (integer 250..30000 ms) on all language-intelligence request DTOs (`RenamePreviewRequest`, `OrganizeImportsRequest`, `FormattingRequest`, `CodeActionRequest`, `CheckPostEditDiagnosticsRequest`). Omitted means consumer default applies. `LspWorkspaceEdit.positionEncoding` must be `"utf-16"`.
 
 ## Runtime Validators
 
@@ -76,8 +78,10 @@ All validators return `{ ok: true, value } | { ok: false, error }` and enforce r
 
 ## Schema Versioning
 
-- Schema version `4` (`PROTOCOL_SCHEMA_VERSION = 4`); any bump is a **breaking change** — validators require exact `schemaVersion` equality (`src/contract.ts`), so both consumers must update in lockstep.
+- Schema version `5` (`PROTOCOL_SCHEMA_VERSION = 5`); any bump is a **breaking change** — validators require exact `schemaVersion` equality (`src/contract.ts`), so both consumers must update in lockstep. No version shim or negotiation.
 - Version `0.5.0` generalizes mutation lifecycle contracts and added the language intelligence channel and its DTOs additively (no schema bump needed).
+- Version `0.6.0` (schema `5`) adds the optional `timeoutMs` envelope (integer 250..30000) on all language-intelligence request DTOs and requires `LspWorkspaceEdit.positionEncoding: "utf-16"`.
+- Release train: protocol → SmartRead → SmartEdit, in order. Consumers pin the `v0.6.0` tag (no range).
 
 ## Build / Test
 
