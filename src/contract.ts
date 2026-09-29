@@ -340,6 +340,27 @@ export function validateCodeActionResponse(input: unknown): Result<import("./typ
   if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) return fail("CodeActionResponse.serverDescriptorId must be a non-empty string if present");
   return ok(input as unknown as import("./types.js").CodeActionResponse);
 }
+export function validateStageWorkspaceEditRequest(input: unknown): Result<import("./types.js").StageWorkspaceEditRequest> {
+  if (!isPlainObject(input)) return fail("StageWorkspaceEditRequest must be an object");
+  const { workspaceEdit, source, sessionFilePath, cwd } = input as Record<string, unknown>;
+  if (typeof workspaceEdit !== "object" || workspaceEdit === null || Array.isArray(workspaceEdit)) return fail("StageWorkspaceEditRequest.workspaceEdit must be a non-null object");
+  if (!isPlainObject(source)) return fail("StageWorkspaceEditRequest.source must be an object");
+  if (!isNonEmptyString((source as Record<string, unknown>).operation)) return fail("StageWorkspaceEditRequest.source.operation must be a non-empty string");
+  const serverDescriptorId = (source as Record<string, unknown>).serverDescriptorId;
+  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) return fail("StageWorkspaceEditRequest.source.serverDescriptorId must be a non-empty string if present");
+  if (!isNonEmptyString(sessionFilePath)) return fail("StageWorkspaceEditRequest.sessionFilePath must be a non-empty string");
+  if (!isNonEmptyString(cwd)) return fail("StageWorkspaceEditRequest.cwd must be a non-empty string");
+  return ok(input as unknown as import("./types.js").StageWorkspaceEditRequest);
+}
+export function validateApplyStagedEditRequest(input: unknown): Result<import("./types.js").ApplyStagedEditRequest> {
+  if (!isPlainObject(input)) return fail("ApplyStagedEditRequest must be an object");
+  const { proposalId, toolCallId, sessionFilePath, cwd } = input as Record<string, unknown>;
+  if (!isNonEmptyString(proposalId)) return fail("ApplyStagedEditRequest.proposalId must be a non-empty string");
+  if (!isNonEmptyString(toolCallId)) return fail("ApplyStagedEditRequest.toolCallId must be a non-empty string");
+  if (!isNonEmptyString(sessionFilePath)) return fail("ApplyStagedEditRequest.sessionFilePath must be a non-empty string");
+  if (!isNonEmptyString(cwd)) return fail("ApplyStagedEditRequest.cwd must be a non-empty string");
+  return ok(input as unknown as import("./types.js").ApplyStagedEditRequest);
+}
 export function validateEventMessage(input: unknown): Result<EventMessage> {
     if (!isPlainObject(input)) return fail("event must be an object");
     const { kind, schemaVersion } = input;
@@ -347,7 +368,7 @@ export function validateEventMessage(input: unknown): Result<EventMessage> {
     if (kind === "request") {
         const { requestId, rpc, payload } = input;
         if (typeof requestId !== "string" || requestId.length === 0) return fail("request.requestId required");
-        if (typeof rpc !== "string" || (rpc !== "resolve_evidence" && rpc !== "publish_inspection" && rpc !== "invalidate" && rpc !== "language_intelligence_capabilities" && rpc !== "check_post_edit_diagnostics" && rpc !== "rename_preview" && rpc !== "organize_imports" && rpc !== "formatting" && rpc !== "code_action"))
+        if (typeof rpc !== "string" || (rpc !== "resolve_evidence" && rpc !== "publish_inspection" && rpc !== "invalidate" && rpc !== "language_intelligence_capabilities" && rpc !== "check_post_edit_diagnostics" && rpc !== "rename_preview" && rpc !== "organize_imports" && rpc !== "formatting" && rpc !== "code_action" && rpc !== "stage_workspace_edit" && rpc !== "apply_staged_edit"))
             return fail("request.rpc must be a known method");
         return ok(input as unknown as EventMessage);
     }

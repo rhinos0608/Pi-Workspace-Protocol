@@ -147,7 +147,9 @@ export type RpcMethod =
     | "rename_preview"
     | "organize_imports"
     | "formatting"
-    | "code_action";
+    | "code_action"
+    | "stage_workspace_edit"
+    | "apply_staged_edit";
 
 export interface EventMessageBase {
     readonly schemaVersion: typeof PROTOCOL_SCHEMA_VERSION;
@@ -175,6 +177,7 @@ export type EventMessage = RequestEvent | ReplyEvent;
 export const RPC_CHANNELS = {
     inspectPatch: "pi.workspace.inspect_patch.rpc",
     languageIntelligence: "pi.workspace.language_intelligence.rpc",
+    workspaceEdit: "pi.workspace.workspace_edit.rpc",
 } as const;
 
 export const LANGUAGE_INTELLIGENCE_RPC_METHODS = {
@@ -202,6 +205,42 @@ export interface LspWorkspaceEdit {
         readonly filePath: string;
         readonly edits: ReadonlyArray<LspTextEdit>;
     }>;
+}
+
+export const WORKSPACE_EDIT_RPC_METHODS = {
+    stage: "stage_workspace_edit",
+    apply: "apply_staged_edit",
+} as const;
+
+export interface StageWorkspaceEditSource {
+    readonly operation: string;
+    readonly serverDescriptorId?: string;
+}
+
+export interface StageWorkspaceEditRequest {
+    readonly workspaceEdit: unknown;
+    readonly source: StageWorkspaceEditSource;
+    readonly sessionFilePath: string;
+    readonly cwd: string;
+}
+
+export type StageWorkspaceEditResponse =
+    | { readonly ok: true; readonly proposalId: string; readonly files: string[]; readonly diff: string }
+    | { readonly ok: false; readonly reason: string };
+
+export interface ApplyStagedEditRequest {
+    readonly proposalId: string;
+    readonly toolCallId: string;
+    readonly sessionFilePath: string;
+    readonly cwd: string;
+}
+
+export interface ApplyStagedEditResponse {
+    readonly ok: boolean;
+    readonly status: "applied" | "rejected" | "failed";
+    readonly text: string;
+    readonly diagnostics: string[];
+    readonly changedFiles: string[];
 }
 
 export interface RenamePreviewRequest {
