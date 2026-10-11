@@ -3,7 +3,7 @@
  * No Pi imports. No filesystem state. No singletons.
  */
 
-export const PROTOCOL_SCHEMA_VERSION = 5 as const;
+export const PROTOCOL_SCHEMA_VERSION = 6 as const;
 
 /** LSP request timeout envelope (ms). Applies to all language-intelligence request DTOs invoking LSP via optional `timeoutMs`. */
 export const LSP_TIMEOUT_MS_MIN = 250 as const;
@@ -145,7 +145,6 @@ export type RpcMethod =
     | "language_intelligence_capabilities"
     | "check_post_edit_diagnostics"
     | "rename_preview"
-    | "organize_imports"
     | "formatting"
     | "code_action"
     | "stage_workspace_edit"
@@ -184,7 +183,6 @@ export const LANGUAGE_INTELLIGENCE_RPC_METHODS = {
     capabilities: "language_intelligence_capabilities",
     checkPostEditDiagnostics: "check_post_edit_diagnostics",
     renamePreview: "rename_preview",
-    organizeImports: "organize_imports",
     formatting: "formatting",
     codeAction: "code_action",
 } as const;
@@ -192,6 +190,8 @@ export const LANGUAGE_INTELLIGENCE_RPC_METHODS = {
 export type RpcChannel = (typeof RPC_CHANNELS)[keyof typeof RPC_CHANNELS];
 
 // ── Rename preview DTOs ─────────────────────────────────────────────
+// D-81: staged proposals, never raw edits. Success payload matches the
+// StageWorkspaceEditResponse success shape (proposalId/files/diff).
 
 export interface LspTextEdit {
     readonly filePath: string;
@@ -212,8 +212,14 @@ export const WORKSPACE_EDIT_RPC_METHODS = {
     apply: "apply_staged_edit",
 } as const;
 
+export interface StageWorkspaceEditSourceDocument {
+    readonly canonicalPath: string;
+    readonly sha256: string;
+}
+
 export interface StageWorkspaceEditSource {
     readonly operation: string;
+    readonly document: StageWorkspaceEditSourceDocument;
     readonly serverDescriptorId?: string;
 }
 
@@ -251,28 +257,13 @@ export interface RenamePreviewRequest {
     readonly timeoutMs?: number;
 }
 
-export interface RenamePreviewResponse {
-    readonly ok: boolean;
-    readonly workspaceEdit?: LspWorkspaceEdit;
-    readonly error?: string;
-    readonly serverDescriptorId?: string;
-}
-
-// ── Organize imports DTOs ───────────────────────────────────────────
-
-export interface OrganizeImportsRequest {
-    readonly filePath: string;
-    readonly timeoutMs?: number;
-}
-
-export interface OrganizeImportsResponse {
-    readonly ok: boolean;
-    readonly workspaceEdit?: LspWorkspaceEdit;
-    readonly error?: string;
-    readonly serverDescriptorId?: string;
-}
+export type RenamePreviewResponse =
+    | { readonly ok: true; readonly proposalId: string; readonly files: string[]; readonly diff: string; readonly serverDescriptorId?: string }
+    | { readonly ok: false; readonly error: string };
 
 // ── Formatting DTOs ─────────────────────────────────────────────────
+// D-81: staged proposals, never raw edits. Success payload matches the
+// StageWorkspaceEditResponse success shape (proposalId/files/diff).
 
 export interface FormattingRequest {
     readonly filePath: string;
@@ -282,14 +273,17 @@ export interface FormattingRequest {
     readonly insertSpaces?: boolean;
 }
 
-export interface FormattingResponse {
-    readonly ok: boolean;
-    readonly workspaceEdit?: LspWorkspaceEdit;
-    readonly error?: string;
-    readonly serverDescriptorId?: string;
-}
+export type FormattingResponse =
+    | { readonly ok: true; readonly proposalId: string; readonly files: string[]; readonly diff: string; readonly serverDescriptorId?: string }
+    | { readonly ok: false; readonly error: string };
 
 // ── Code action DTOs ────────────────────────────────────────────────
+// D-81: discovery returns candidates WITHOUT edits (title/kind/isPreferred
+// plus opaque actionId and raw-source sourceSha256). Resolution is an
+// explicit selection { actionId, sourceSha256 } that returns a staged
+// proposal in the StageWorkspaceEditResponse success shape. Organize
+// imports has no dedicated RPC: callers use discovery filtered to kind
+// "source.organizeImports" plus explicit selection.
 
 export interface CodeActionRequest {
     readonly filePath: string;
@@ -303,19 +297,26 @@ export interface CodeActionRequest {
         readonly message: string;
     }>;
     readonly only?: ReadonlyArray<string>;
+    /** Explicit selection of a discovery candidate; when present the response is a staged proposal. */
+    readonly selection?: CodeActionSelection;
     readonly timeoutMs?: number;
+}
+
+/** Opaque discovery identity: actionId plus the raw-source byte digest it was discovered against. */
+export interface CodeActionSelection {
+    readonly actionId: string;
+    readonly sourceSha256: Sha256;
 }
 
 export interface CodeActionItem {
     readonly title: string;
     readonly kind?: string;
-    readonly workspaceEdit?: LspWorkspaceEdit;
+    readonly actionId: string;
+    readonly sourceSha256: Sha256;
     readonly isPreferred?: boolean;
 }
 
-export interface CodeActionResponse {
-    readonly ok: boolean;
-    readonly actions?: ReadonlyArray<CodeActionItem>;
-    readonly error?: string;
-    readonly serverDescriptorId?: string;
-}
+export type CodeActionResponse =
+    | { readonly ok: true; readonly actions: ReadonlyArray<CodeActionItem>; readonly serverDescriptorId?: string }
+    | { readonly ok: true; readonly proposalId: string; readonly files: string[]; readonly diff: string; readonly serverDescriptorId?: string }
+    | { readonly ok: false; readonly error: string };

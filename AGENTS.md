@@ -15,7 +15,7 @@
 
 ## Schema Versioning
 
-**`PROTOCOL_SCHEMA_VERSION = 5`** (`src/types.ts:6`). Enforced by exact match in `src/contract.ts` — no version negotiation or range checks. Any version bump is a breaking change; both consumers (Pi-SmartRead *and* Pi-SmartEdit) must update in lockstep. Package semver (`0.6.0`) tracks API surface, not wire format. `0.6.0` adds the `timeoutMs` LSP envelope (integer 250..30000) on all language-intelligence request DTOs and requires `LspWorkspaceEdit.positionEncoding: "utf-16"` — schema `5`.
+**`PROTOCOL_SCHEMA_VERSION = 6`** (`src/types.ts:6`). Enforced by exact match in `src/contract.ts` — no version negotiation or range checks. Any version bump is a breaking change; both consumers (Pi-SmartRead *and* Pi-SmartEdit) must update in lockstep. Package semver (`0.8.0`) tracks API surface, not wire format. `0.8.0` requires `StageWorkspaceEditSource.document = { canonicalPath: string, sha256: string }` (raw origin-source byte digest) as an explicit proposal generation precondition distinct from read authorization — schema `6`.
 
 ## Operational Contracts and Invariants
 

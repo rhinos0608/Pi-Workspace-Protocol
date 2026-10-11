@@ -2,7 +2,7 @@
  * Runtime validators / codecs.
  * Pure functions. No I/O. No Pi imports.
  */
-import { PROTOCOL_SCHEMA_VERSION, type WorkspaceEvidenceEnvelope, type EvidenceRef, type EventMessage, type InspectedResource, type InspectMode, type MutationStatus, type MutationDetails } from "./types.js";
+import { PROTOCOL_SCHEMA_VERSION, type WorkspaceEvidenceEnvelope, type EvidenceRef, type EventMessage, type InspectedResource, type InspectMode, type MutationStatus, type MutationDetails, type StageWorkspaceEditSource, type StageWorkspaceEditRequest, type StageWorkspaceEditSourceDocument } from "./types.js";
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -207,13 +207,30 @@ function validateLspRange(v: unknown, where: string): Result<true> {
   }
   return ok(true);
 }
-function validateLspTextEdit(v: unknown, where: string): Result<true> {
+export function validateCodeActionSelection(input: unknown, where = "CodeActionSelection"): Result<import("./types.js").CodeActionSelection> {
+  if (!isPlainObject(input)) return fail(`${where} must be an object`);
+  const obj = input as Record<string, unknown>;
+  const k = rejectUnknownKeys(obj, where, ["actionId", "sourceSha256"]);
+  if (!k.ok) return k;
+  if (typeof obj.actionId !== "string" || !HEX64.test(obj.actionId))
+    return fail(`${where}.actionId must be a 64-char lowercase hex sha256`);
+  if (typeof obj.sourceSha256 !== "string" || !HEX64.test(obj.sourceSha256 as string))
+    return fail(`${where}.sourceSha256 must be a 64-char lowercase hex sha256`);
+  return ok(input as unknown as import("./types.js").CodeActionSelection);
+}
+function validateCodeActionItem(v: unknown, idx: number): Result<true> {
+  const where = `CodeActionResponse.actions[${idx}]`;
   if (!isPlainObject(v)) return fail(`${where} must be an object`);
-  const { filePath, range, newText } = v as Record<string, unknown>;
-  if (!isNonEmptyString(filePath)) return fail(`${where}.filePath must be a non-empty string`);
-  const r = validateLspRange(range, `${where}.range`);
-  if (!r.ok) return r;
-  if (typeof newText !== "string") return fail(`${where}.newText must be a string`);
+  const obj = v as Record<string, unknown>;
+  const k = rejectUnknownKeys(obj, where, ["title", "kind", "actionId", "sourceSha256", "isPreferred"]);
+  if (!k.ok) return k;
+  if (!isNonEmptyString(obj.title)) return fail(`${where}.title must be a non-empty string`);
+  if (obj.kind !== undefined && typeof obj.kind !== "string") return fail(`${where}.kind must be a string if present`);
+  if (typeof obj.actionId !== "string" || !HEX64.test(obj.actionId))
+    return fail(`${where}.actionId must be a 64-char lowercase hex sha256`);
+  if (typeof obj.sourceSha256 !== "string" || !HEX64.test(obj.sourceSha256 as string))
+    return fail(`${where}.sourceSha256 must be a 64-char lowercase hex sha256`);
+  if (obj.isPreferred !== undefined && typeof obj.isPreferred !== "boolean") return fail(`${where}.isPreferred must be boolean if present`);
   return ok(true);
 }
 function validateTimeoutMs(v: unknown, where: string): Result<true> {
@@ -222,22 +239,22 @@ function validateTimeoutMs(v: unknown, where: string): Result<true> {
     return fail(`${where}.timeoutMs must be an integer 250..30000 if present`);
   return ok(true);
 }
-function validateLspWorkspaceEdit(v: unknown, where: string): Result<true> {
-  if (!isPlainObject(v)) return fail(`${where} must be an object`);
-  const { positionEncoding, fileEdits } = v as Record<string, unknown>;
-  if (positionEncoding !== "utf-16") return fail(`${where}.positionEncoding must be 'utf-16'`);
-  if (!Array.isArray(fileEdits)) return fail(`${where}.fileEdits must be an array`);
-  for (let i = 0; i < fileEdits.length; i++) {
-    const fe = fileEdits[i];
-    if (!isPlainObject(fe)) return fail(`${where}.fileEdits[${i}] must be an object`);
-    const { filePath, edits } = fe as Record<string, unknown>;
-    if (!isNonEmptyString(filePath)) return fail(`${where}.fileEdits[${i}].filePath must be a non-empty string`);
-    if (!Array.isArray(edits)) return fail(`${where}.fileEdits[${i}].edits must be an array`);
-    for (let j = 0; j < (edits as unknown[]).length; j++) {
-      const r = validateLspTextEdit((edits as unknown[])[j], `${where}.fileEdits[${i}].edits[${j}]`);
-      if (!r.ok) return r;
-    }
+/** Fail-closed exact key set for discriminated response unions (D-81: no raw edits ever ride these RPCs). */
+function rejectUnknownKeys(obj: Record<string, unknown>, where: string, allowed: ReadonlyArray<string>): Result<true> {
+  for (const key of Object.keys(obj)) {
+    if (!allowed.includes(key)) return fail(`${where} has unknown field '${key}'`);
   }
+  return ok(true);
+}
+/** Shared staged-proposal success payload (matches StageWorkspaceEditResponse field names). */
+function validateStagedProposalFields(obj: Record<string, unknown>, name: string): Result<true> {
+  const { proposalId, files, diff, serverDescriptorId } = obj;
+  if (!isNonEmptyString(proposalId)) return fail(`${name}.proposalId must be a non-empty string on success`);
+  if (!Array.isArray(files) || !isDenseArray(files) || files.some((f) => typeof f !== "string"))
+    return fail(`${name}.files must be an array of strings on success`);
+  if (typeof diff !== "string") return fail(`${name}.diff must be a string on success`);
+  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId))
+    return fail(`${name}.serverDescriptorId must be a non-empty string if present`);
   return ok(true);
 }
 export function validateRenamePreviewRequest(input: unknown): Result<import("./types.js").RenamePreviewRequest> {
@@ -252,28 +269,19 @@ export function validateRenamePreviewRequest(input: unknown): Result<import("./t
 }
 export function validateRenamePreviewResponse(input: unknown): Result<import("./types.js").RenamePreviewResponse> {
   if (!isPlainObject(input)) return fail("RenamePreviewResponse must be an object");
-  const { ok: okFlag, workspaceEdit, error, serverDescriptorId } = input as Record<string, unknown>;
-  if (typeof okFlag !== "boolean") return fail("RenamePreviewResponse.ok must be boolean");
-  if (workspaceEdit !== undefined) { const r = validateLspWorkspaceEdit(workspaceEdit, "RenamePreviewResponse.workspaceEdit"); if (!r.ok) return r; }
-  if (error !== undefined && typeof error !== "string") return fail("RenamePreviewResponse.error must be a string if present");
-  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) return fail("RenamePreviewResponse.serverDescriptorId must be a non-empty string if present");
+  const obj = input as Record<string, unknown>;
+  if (typeof obj.ok !== "boolean") return fail("RenamePreviewResponse.ok must be boolean");
+  if (obj.ok === true) {
+    const k = rejectUnknownKeys(obj, "RenamePreviewResponse", ["ok", "proposalId", "files", "diff", "serverDescriptorId"]);
+    if (!k.ok) return k;
+    const f = validateStagedProposalFields(obj, "RenamePreviewResponse");
+    if (!f.ok) return f;
+    return ok(input as unknown as import("./types.js").RenamePreviewResponse);
+  }
+  const k = rejectUnknownKeys(obj, "RenamePreviewResponse", ["ok", "error"]);
+  if (!k.ok) return k;
+  if (!isNonEmptyString(obj.error)) return fail("RenamePreviewResponse.error must be a non-empty string on failure");
   return ok(input as unknown as import("./types.js").RenamePreviewResponse);
-}
-export function validateOrganizeImportsRequest(input: unknown): Result<import("./types.js").OrganizeImportsRequest> {
-  if (!isPlainObject(input)) return fail("OrganizeImportsRequest must be an object");
-  const { filePath, timeoutMs } = input as Record<string, unknown>;
-  if (!isNonEmptyString(filePath)) return fail("OrganizeImportsRequest.filePath must be a non-empty string");
-  { const r = validateTimeoutMs(timeoutMs, "OrganizeImportsRequest"); if (!r.ok) return r; }
-  return ok(input as unknown as import("./types.js").OrganizeImportsRequest);
-}
-export function validateOrganizeImportsResponse(input: unknown): Result<import("./types.js").OrganizeImportsResponse> {
-  if (!isPlainObject(input)) return fail("OrganizeImportsResponse must be an object");
-  const { ok: okFlag, workspaceEdit, error, serverDescriptorId } = input as Record<string, unknown>;
-  if (typeof okFlag !== "boolean") return fail("OrganizeImportsResponse.ok must be boolean");
-  if (workspaceEdit !== undefined) { const r = validateLspWorkspaceEdit(workspaceEdit, "OrganizeImportsResponse.workspaceEdit"); if (!r.ok) return r; }
-  if (error !== undefined && typeof error !== "string") return fail("OrganizeImportsResponse.error must be a string if present");
-  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) return fail("OrganizeImportsResponse.serverDescriptorId must be a non-empty string if present");
-  return ok(input as unknown as import("./types.js").OrganizeImportsResponse);
 }
 export function validateFormattingRequest(input: unknown): Result<import("./types.js").FormattingRequest> {
   if (!isPlainObject(input)) return fail("FormattingRequest must be an object");
@@ -286,16 +294,23 @@ export function validateFormattingRequest(input: unknown): Result<import("./type
 }
 export function validateFormattingResponse(input: unknown): Result<import("./types.js").FormattingResponse> {
   if (!isPlainObject(input)) return fail("FormattingResponse must be an object");
-  const { ok: okFlag, workspaceEdit, error, serverDescriptorId } = input as Record<string, unknown>;
-  if (typeof okFlag !== "boolean") return fail("FormattingResponse.ok must be boolean");
-  if (workspaceEdit !== undefined) { const r = validateLspWorkspaceEdit(workspaceEdit, "FormattingResponse.workspaceEdit"); if (!r.ok) return r; }
-  if (error !== undefined && typeof error !== "string") return fail("FormattingResponse.error must be a string if present");
-  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) return fail("FormattingResponse.serverDescriptorId must be a non-empty string if present");
+  const obj = input as Record<string, unknown>;
+  if (typeof obj.ok !== "boolean") return fail("FormattingResponse.ok must be boolean");
+  if (obj.ok === true) {
+    const k = rejectUnknownKeys(obj, "FormattingResponse", ["ok", "proposalId", "files", "diff", "serverDescriptorId"]);
+    if (!k.ok) return k;
+    const f = validateStagedProposalFields(obj, "FormattingResponse");
+    if (!f.ok) return f;
+    return ok(input as unknown as import("./types.js").FormattingResponse);
+  }
+  const k = rejectUnknownKeys(obj, "FormattingResponse", ["ok", "error"]);
+  if (!k.ok) return k;
+  if (!isNonEmptyString(obj.error)) return fail("FormattingResponse.error must be a non-empty string on failure");
   return ok(input as unknown as import("./types.js").FormattingResponse);
 }
 export function validateCodeActionRequest(input: unknown): Result<import("./types.js").CodeActionRequest> {
   if (!isPlainObject(input)) return fail("CodeActionRequest must be an object");
-  const { filePath, line, character, endLine, endCharacter, diagnostics, only, timeoutMs } = input as Record<string, unknown>;
+  const { filePath, line, character, endLine, endCharacter, diagnostics, only, selection, timeoutMs } = input as Record<string, unknown>;
   if (!isNonEmptyString(filePath)) return fail("CodeActionRequest.filePath must be a non-empty string");
   if (!isNonNegInt(line)) return fail("CodeActionRequest.line must be a non-negative integer");
   if (!isNonNegInt(character)) return fail("CodeActionRequest.character must be a non-negative integer");
@@ -317,40 +332,97 @@ export function validateCodeActionRequest(input: unknown): Result<import("./type
     if (!Array.isArray(only)) return fail("CodeActionRequest.only must be an array if present");
     for (let i = 0; i < only.length; i++) if (!isNonEmptyString((only as unknown[])[i])) return fail(`CodeActionRequest.only[${i}] must be a non-empty string`);
   }
+  if (selection !== undefined) {
+    const s = validateCodeActionSelection(selection, "CodeActionRequest.selection");
+    if (!s.ok) return s;
+  }
   { const r = validateTimeoutMs(timeoutMs, "CodeActionRequest"); if (!r.ok) return r; }
   return ok(input as unknown as import("./types.js").CodeActionRequest);
 }
 export function validateCodeActionResponse(input: unknown): Result<import("./types.js").CodeActionResponse> {
   if (!isPlainObject(input)) return fail("CodeActionResponse must be an object");
-  const { ok: okFlag, actions, error, serverDescriptorId } = input as Record<string, unknown>;
-  if (typeof okFlag !== "boolean") return fail("CodeActionResponse.ok must be boolean");
-  if (actions !== undefined) {
-    if (!Array.isArray(actions)) return fail("CodeActionResponse.actions must be an array if present");
-    for (let i = 0; i < actions.length; i++) {
-      const a = actions[i];
-      if (!isPlainObject(a)) return fail(`CodeActionResponse.actions[${i}] must be an object`);
-      const { title, kind, workspaceEdit, isPreferred } = a as Record<string, unknown>;
-      if (!isNonEmptyString(title)) return fail(`CodeActionResponse.actions[${i}].title must be a non-empty string`);
-      if (kind !== undefined && typeof kind !== "string") return fail(`CodeActionResponse.actions[${i}].kind must be a string if present`);
-      if (workspaceEdit !== undefined) { const r = validateLspWorkspaceEdit(workspaceEdit, `CodeActionResponse.actions[${i}].workspaceEdit`); if (!r.ok) return r; }
-      if (isPreferred !== undefined && typeof isPreferred !== "boolean") return fail(`CodeActionResponse.actions[${i}].isPreferred must be boolean if present`);
-    }
+  const obj = input as Record<string, unknown>;
+  if (typeof obj.ok !== "boolean") return fail("CodeActionResponse.ok must be boolean");
+  if (obj.ok === false) {
+    const k = rejectUnknownKeys(obj, "CodeActionResponse", ["ok", "error"]);
+    if (!k.ok) return k;
+    if (!isNonEmptyString(obj.error)) return fail("CodeActionResponse.error must be a non-empty string on failure");
+    return ok(input as unknown as import("./types.js").CodeActionResponse);
   }
-  if (error !== undefined && typeof error !== "string") return fail("CodeActionResponse.error must be a string if present");
-  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) return fail("CodeActionResponse.serverDescriptorId must be a non-empty string if present");
+  const hasProposal = "proposalId" in obj;
+  const hasActions = "actions" in obj;
+  if (hasProposal === hasActions)
+    return fail("CodeActionResponse with ok=true requires exactly one of 'actions' (discovery) or 'proposalId' (staged resolution)");
+  if (hasProposal) {
+    const k = rejectUnknownKeys(obj, "CodeActionResponse", ["ok", "proposalId", "files", "diff", "serverDescriptorId"]);
+    if (!k.ok) return k;
+    const f = validateStagedProposalFields(obj, "CodeActionResponse");
+    if (!f.ok) return f;
+    return ok(input as unknown as import("./types.js").CodeActionResponse);
+  }
+  const k = rejectUnknownKeys(obj, "CodeActionResponse", ["ok", "actions", "serverDescriptorId"]);
+  if (!k.ok) return k;
+  const { actions, serverDescriptorId } = obj;
+  if (!Array.isArray(actions) || !isDenseArray(actions)) return fail("CodeActionResponse.actions must be an array");
+  for (let i = 0; i < actions.length; i++) {
+    const item = validateCodeActionItem(actions[i], i);
+    if (!item.ok) return item;
+  }
+  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId))
+    return fail("CodeActionResponse.serverDescriptorId must be a non-empty string if present");
   return ok(input as unknown as import("./types.js").CodeActionResponse);
 }
-export function validateStageWorkspaceEditRequest(input: unknown): Result<import("./types.js").StageWorkspaceEditRequest> {
+function isAbsoluteShapedPath(p: string): boolean {
+  if (typeof p !== "string" || p.length === 0 || p.includes("\0")) return false;
+  if (p.startsWith("/")) return true;
+  if (p.startsWith("\\\\")) {
+    const [server, share] = p.slice(2).split(/[/\\]/);
+    return Boolean(server && share);
+  }
+  return /^[a-zA-Z]:[/\\]/.test(p);
+}
+
+export function validateStageWorkspaceEditSource(source: unknown): Result<StageWorkspaceEditSource> {
+  if (!isPlainObject(source)) return fail("StageWorkspaceEditRequest.source must be an object");
+  const { operation, document, serverDescriptorId } = source as Record<string, unknown>;
+  if (!isNonEmptyString(operation)) return fail("StageWorkspaceEditRequest.source.operation must be a non-empty string");
+  if (!isPlainObject(document)) return fail("StageWorkspaceEditRequest.source.document must be an object");
+
+  const docKeys = Object.keys(document);
+  for (const key of docKeys) {
+    if (key !== "canonicalPath" && key !== "sha256") {
+      return fail(`StageWorkspaceEditRequest.source.document has unknown field '${key}'`);
+    }
+  }
+
+  const { canonicalPath, sha256 } = document as Record<string, unknown>;
+  if (typeof canonicalPath !== "string" || canonicalPath.length === 0) {
+    return fail("StageWorkspaceEditRequest.source.document.canonicalPath must be a non-empty string");
+  }
+  if (canonicalPath.includes("\0")) {
+    return fail("StageWorkspaceEditRequest.source.document.canonicalPath must not contain NUL bytes");
+  }
+  if (!isAbsoluteShapedPath(canonicalPath)) {
+    return fail("StageWorkspaceEditRequest.source.document.canonicalPath must be an absolute path");
+  }
+  if (typeof sha256 !== "string" || !HEX64.test(sha256)) {
+    return fail("StageWorkspaceEditRequest.source.document.sha256 must be a 64-char lowercase hex sha256");
+  }
+  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) {
+    return fail("StageWorkspaceEditRequest.source.serverDescriptorId must be a non-empty string if present");
+  }
+  return ok(source as unknown as StageWorkspaceEditSource);
+}
+
+export function validateStageWorkspaceEditRequest(input: unknown): Result<StageWorkspaceEditRequest> {
   if (!isPlainObject(input)) return fail("StageWorkspaceEditRequest must be an object");
   const { workspaceEdit, source, sessionFilePath, cwd } = input as Record<string, unknown>;
   if (typeof workspaceEdit !== "object" || workspaceEdit === null || Array.isArray(workspaceEdit)) return fail("StageWorkspaceEditRequest.workspaceEdit must be a non-null object");
-  if (!isPlainObject(source)) return fail("StageWorkspaceEditRequest.source must be an object");
-  if (!isNonEmptyString((source as Record<string, unknown>).operation)) return fail("StageWorkspaceEditRequest.source.operation must be a non-empty string");
-  const serverDescriptorId = (source as Record<string, unknown>).serverDescriptorId;
-  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) return fail("StageWorkspaceEditRequest.source.serverDescriptorId must be a non-empty string if present");
+  const sourceRes = validateStageWorkspaceEditSource(source);
+  if (!sourceRes.ok) return sourceRes;
   if (!isNonEmptyString(sessionFilePath)) return fail("StageWorkspaceEditRequest.sessionFilePath must be a non-empty string");
   if (!isNonEmptyString(cwd)) return fail("StageWorkspaceEditRequest.cwd must be a non-empty string");
-  return ok(input as unknown as import("./types.js").StageWorkspaceEditRequest);
+  return ok(input as unknown as StageWorkspaceEditRequest);
 }
 export function validateApplyStagedEditRequest(input: unknown): Result<import("./types.js").ApplyStagedEditRequest> {
   if (!isPlainObject(input)) return fail("ApplyStagedEditRequest must be an object");
@@ -368,7 +440,7 @@ export function validateEventMessage(input: unknown): Result<EventMessage> {
     if (kind === "request") {
         const { requestId, rpc, payload } = input;
         if (typeof requestId !== "string" || requestId.length === 0) return fail("request.requestId required");
-        if (typeof rpc !== "string" || (rpc !== "resolve_evidence" && rpc !== "publish_inspection" && rpc !== "invalidate" && rpc !== "language_intelligence_capabilities" && rpc !== "check_post_edit_diagnostics" && rpc !== "rename_preview" && rpc !== "organize_imports" && rpc !== "formatting" && rpc !== "code_action" && rpc !== "stage_workspace_edit" && rpc !== "apply_staged_edit"))
+        if (typeof rpc !== "string" || (rpc !== "resolve_evidence" && rpc !== "publish_inspection" && rpc !== "invalidate" && rpc !== "language_intelligence_capabilities" && rpc !== "check_post_edit_diagnostics" && rpc !== "rename_preview" && rpc !== "formatting" && rpc !== "code_action" && rpc !== "stage_workspace_edit" && rpc !== "apply_staged_edit"))
             return fail("request.rpc must be a known method");
         return ok(input as unknown as EventMessage);
     }

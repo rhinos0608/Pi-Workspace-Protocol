@@ -8,7 +8,6 @@ import {
 } from "../src/types.js";
 import {
     validateRenamePreviewRequest,
-    validateOrganizeImportsRequest,
     validateFormattingRequest,
     validateCodeActionRequest,
     validateRenamePreviewResponse,
@@ -21,7 +20,6 @@ import { validateCheckPostEditDiagnosticsRequest } from "../src/language-intelli
 function hex64(c = "a") { return c.repeat(64); }
 
 const renameBase = { filePath: "/x/a.ts", line: 1, character: 2, newName: "b" };
-const orgBase = { filePath: "/x/a.ts" };
 const fmtBase = { filePath: "/x/a.ts" };
 const caBase = { filePath: "/x/a.ts", line: 0, character: 0 };
 const diagBase = {
@@ -38,7 +36,6 @@ const goodEdit = {
 
 const requestValidators: Array<[string, (v: unknown) => { ok: boolean }, Record<string, unknown>]> = [
     ["RenamePreviewRequest", validateRenamePreviewRequest, renameBase],
-    ["OrganizeImportsRequest", validateOrganizeImportsRequest, orgBase],
     ["FormattingRequest", validateFormattingRequest, fmtBase],
     ["CodeActionRequest", validateCodeActionRequest, caBase],
     ["CheckPostEditDiagnosticsRequest", validateCheckPostEditDiagnosticsRequest, diagBase],
@@ -65,24 +62,19 @@ test("constants: timeout envelope 250/10000/30000", () => {
     assert.equal(LSP_TIMEOUT_MS_MAX, 30000);
 });
 
-test("PROTOCOL_SCHEMA_VERSION is 5", () => {
-    assert.equal(PROTOCOL_SCHEMA_VERSION, 5);
+test("PROTOCOL_SCHEMA_VERSION is 6", () => {
+    assert.equal(PROTOCOL_SCHEMA_VERSION, 6);
 });
 
-test("LspWorkspaceEdit: requires positionEncoding utf-16", () => {
-    assert.equal(validateRenamePreviewResponse({ ok: true, workspaceEdit: goodEdit }).ok, true);
+test("staged proposal response: success requires proposalId/files/diff (D-81)", () => {
+    assert.equal(validateRenamePreviewResponse({ ok: true, proposalId: "p1", files: ["/x/a.ts"], diff: "@@" }).ok, true);
 });
 
-test("LspWorkspaceEdit: rejects missing/wrong encoding", () => {
+test("staged proposal response: rejects workspaceEdit (no raw edits, D-81)", () => {
+    assert.equal(validateRenamePreviewResponse({ ok: true, proposalId: "p1", files: [], diff: "", workspaceEdit: goodEdit }).ok, false);
+    assert.equal(validateRenamePreviewResponse({ ok: true, workspaceEdit: goodEdit }).ok, false);
     const { positionEncoding: _drop, ...noEncoding } = goodEdit;
-    assert.equal(validateRenamePreviewResponse({ ok: true, workspaceEdit: noEncoding }).ok, false);
-    for (const enc of ["utf-8", "utf-32", "", "UTF-16", null, 16]) {
-        assert.equal(
-            validateRenamePreviewResponse({ ok: true, workspaceEdit: { ...goodEdit, positionEncoding: enc } }).ok,
-            false,
-            `encoding=${JSON.stringify(enc)} should reject`,
-        );
-    }
+    assert.equal(validateRenamePreviewResponse({ ok: true, proposalId: "p1", files: [], diff: "", workspaceEdit: noEncoding }).ok, false);
 });
 
 test("schema-5 event round-trip (encode/decode + gate)", () => {
@@ -100,7 +92,9 @@ test("schema-5 event round-trip (encode/decode + gate)", () => {
     assert.equal(validateRenamePreviewRequest((msg.payload as Record<string, unknown>)).ok, true);
 });
 
-test("schema-5 gate rejects stale schemaVersion 4", () => {
-    const r = validateEventMessage({ kind: "request", requestId: "r", rpc: "rename_preview", payload: {}, schemaVersion: 4 });
-    assert.equal(r.ok, false);
+test("schema gate rejects stale schemaVersion 5 (and earlier)", () => {
+    const r5 = validateEventMessage({ kind: "request", requestId: "r", rpc: "rename_preview", payload: {}, schemaVersion: 5 });
+    assert.equal(r5.ok, false);
+    const r4 = validateEventMessage({ kind: "request", requestId: "r", rpc: "rename_preview", payload: {}, schemaVersion: 4 });
+    assert.equal(r4.ok, false);
 });

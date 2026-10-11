@@ -39,8 +39,8 @@ function buildValidEnvelope(): WorkspaceEvidenceEnvelope {
     };
 }
 
-test("PROTOCOL_SCHEMA_VERSION is 5", () => {
-    assert.equal(PROTOCOL_SCHEMA_VERSION, 5);
+test("PROTOCOL_SCHEMA_VERSION is 6", () => {
+    assert.equal(PROTOCOL_SCHEMA_VERSION, 6);
 });
 
 test("mutation validators accept edit and transfer lifecycle details", () => {
@@ -238,12 +238,17 @@ test("validateEventMessage rejects missing requestId on request", () => {
     if (!r.ok) assert.match(r.error, /requestId/);
 });
 
-test("validateEventMessage accepts new language-intelligence RPC methods", () => {
-    for (const rpc of ["language_intelligence_capabilities", "check_post_edit_diagnostics"] as const) {
+test("validateEventMessage accepts language-intelligence edit RPC methods", () => {
+    for (const rpc of ["rename_preview", "formatting", "code_action"] as const) {
         const r = validateEventMessage({ kind: "request", requestId: "r", rpc, payload: {}, schemaVersion: PROTOCOL_SCHEMA_VERSION } as any);
         assert.equal(r.ok, true, `rpc=${rpc} should be accepted`);
-        if (r.ok) assert.equal((r.value as any).rpc, rpc);
     }
+});
+
+test("validateEventMessage rejects removed organize_imports rpc (D-81)", () => {
+    const r = validateEventMessage({ kind: "request", requestId: "r", rpc: "organize_imports", payload: {}, schemaVersion: PROTOCOL_SCHEMA_VERSION } as any);
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /known method/);
 });
 
 test("validateEventMessage still accepts existing RPC methods (no regression)", () => {
