@@ -38,15 +38,14 @@ Three channels exported via `RPC_CHANNELS`:
 - `languageIntelligence` (`pi.workspace.language_intelligence.rpc`) — Language intelligence operations. Methods:
   - `language_intelligence_capabilities` — Check server capabilities.
   - `check_post_edit_diagnostics` — Post-edit LSP diagnostics.
-  - `rename_preview` — Preview a symbol rename via LSP.
-  - `organize_imports` — Preview organize-imports action.
-  - `formatting` — Preview document formatting.
-  - `code_action` — List code actions at a position.
+  - `rename_preview` — Stage a symbol rename; returns a staged proposal (`proposalId`/`files`/`diff`), never raw edits.
+  - `formatting` — Stage document formatting; returns a staged proposal, never raw edits.
+  - `code_action` — Discover code-action candidates (no edits) or resolve an explicit `{ actionId, sourceSha256 }` selection into a staged proposal. There is no `organize_imports` RPC (removed in 0.8.0/D-81): callers use `code_action` discovery filtered to kind `source.organizeImports` plus explicit selection.
 - `workspaceEdit` (`pi.workspace.workspace_edit.rpc`) — Staged workspace edits, served by SmartEdit. Methods:
   - `stage_workspace_edit` — Stage a WorkspaceEdit; returns a `proposalId` plus affected files and diff.
   - `apply_staged_edit` — Apply a staged proposal by `proposalId`.
 
-Constants: `RPC_CHANNELS.inspectPatch`, `RPC_CHANNELS.languageIntelligence`, `RPC_CHANNELS.workspaceEdit`, `LANGUAGE_INTELLIGENCE_RPC_METHODS` (maps `capabilities`, `checkPostEditDiagnostics`, `renamePreview`, `organizeImports`, `formatting`, `codeAction` to wire method strings), `WORKSPACE_EDIT_RPC_METHODS` (maps `stage`, `apply` to `stage_workspace_edit`, `apply_staged_edit`).
+Constants: `RPC_CHANNELS.inspectPatch`, `RPC_CHANNELS.languageIntelligence`, `RPC_CHANNELS.workspaceEdit`, `LANGUAGE_INTELLIGENCE_RPC_METHODS` (maps `capabilities`, `checkPostEditDiagnostics`, `renamePreview`, `formatting`, `codeAction` to wire method strings), `WORKSPACE_EDIT_RPC_METHODS` (maps `stage`, `apply` to `stage_workspace_edit`, `apply_staged_edit`).
 
 ## Language Intelligence DTOs
 
@@ -55,20 +54,19 @@ All types in `src/types.ts`; validators in `src/contract.ts` / `src/language-int
 - `LspTextEdit` — `{ filePath: string, range: { start: { line, character }, end: { line, character } }, newText: string }`
 - `LspWorkspaceEdit` — `{ positionEncoding: "utf-16" (required), fileEdits: { filePath: string, edits: LspTextEdit[] }[] }`
 - `RenamePreviewRequest` — `{ filePath: string, line: number, character: number, newName: string, timeoutMs?: number }`
-- `RenamePreviewResponse` — `{ ok: boolean, workspaceEdit?: LspWorkspaceEdit, error?: string, serverDescriptorId?: string }`
-- `OrganizeImportsRequest` — `{ filePath: string, timeoutMs?: number }`
-- `OrganizeImportsResponse` — `{ ok: boolean, workspaceEdit?: LspWorkspaceEdit, error?: string, serverDescriptorId?: string }`
+- `RenamePreviewResponse` — `{ ok: true, proposalId: string, files: string[], diff: string, serverDescriptorId?: string } | { ok: false, error: string }` (staged proposal; no `workspaceEdit`)
 - `FormattingRequest` — `{ filePath: string, tabSize?: number, insertSpaces?: boolean, timeoutMs?: number }`
-- `FormattingResponse` — `{ ok: boolean, workspaceEdit?: LspWorkspaceEdit, error?: string, serverDescriptorId?: string }`
-- `CodeActionRequest` — `{ filePath: string, line: number, character: number, endLine?: number, endCharacter?: number, diagnostics?: { range, code?, message }[], only?: string[], timeoutMs?: number }`
-- `CodeActionResponse` — `{ ok: boolean, actions?: CodeActionItem[], error?: string, serverDescriptorId?: string }`
-- `CodeActionItem` — `{ title: string, kind?: string, workspaceEdit?: LspWorkspaceEdit, isPreferred?: boolean }`
+- `FormattingResponse` — `{ ok: true, proposalId: string, files: string[], diff: string, serverDescriptorId?: string } | { ok: false, error: string }` (staged proposal; no `workspaceEdit`)
+- `CodeActionRequest` — `{ filePath: string, line: number, character: number, endLine?: number, endCharacter?: number, diagnostics?: { range, code?, message }[], only?: string[], selection?: CodeActionSelection, timeoutMs?: number }` (`selection` resolves a discovery candidate into a staged proposal)
+- `CodeActionSelection` — `{ actionId: string, sourceSha256: string }` (opaque discovery identity; `sourceSha256` is the lowercase 64-hex raw-source byte digest)
+- `CodeActionResponse` — `{ ok: true, actions: CodeActionItem[], serverDescriptorId?: string }` (discovery) `| { ok: true, proposalId: string, files: string[], diff: string, serverDescriptorId?: string }` (staged resolution) `| { ok: false, error: string }`
+- `CodeActionItem` — `{ title: string, kind?: string, actionId: string, sourceSha256: string, isPreferred?: boolean }` (no edits; `actionId`/`sourceSha256` are lowercase 64-hex)
 - `LANGUAGE_INTELLIGENCE_RPC_METHODS` — constant mapping logical names to wire method strings.
 - `RPC_CHANNELS.languageIntelligence` — channel string `pi.workspace.language_intelligence.rpc`.
 
 Additional language-intelligence types in `src/language-intelligence.ts`: `LanguageIntelligenceCapabilitiesRequest` (`{}`), `LanguageIntelligenceCapabilitiesResponse` (`{ provider: "pi-smartread", capabilities: ("post-edit-diagnostics")[] }`), `CheckPostEditDiagnosticsRequest` (`{ canonicalPath, canonicalWorkspaceRoot, expectedContentSha256, waitMs 0..3000, maxDiagnostics 1..100, timeoutMs? 250..30000 }`), `CheckPostEditDiagnosticsResponse` (discriminated union on `status`: `confirmed` | `empty` | `unavailable` | `degraded`), `LanguageDiagnostic` (`{ message, severity 1|2|3|4, range, source }`).
 
-`timeoutMs` is an optional LSP timeout envelope (integer 250..30000 ms) on all language-intelligence request DTOs (`RenamePreviewRequest`, `OrganizeImportsRequest`, `FormattingRequest`, `CodeActionRequest`, `CheckPostEditDiagnosticsRequest`). Omitted means consumer default applies. `LspWorkspaceEdit.positionEncoding` must be `"utf-16"`.
+`timeoutMs` is an optional LSP timeout envelope (integer 250..30000 ms) on all language-intelligence request DTOs (`RenamePreviewRequest`, `FormattingRequest`, `CodeActionRequest`, `CheckPostEditDiagnosticsRequest`). Omitted means consumer default applies. `LspWorkspaceEdit.positionEncoding` must be `"utf-16"` (the type is still exported for producer/consumer internals, but no language-intelligence response carries a `workspaceEdit`).
 
 ## Workspace Edit DTOs
 
@@ -90,7 +88,7 @@ All types in `src/types.ts`; validators in `src/contract.ts`.
 
 `src/contract.ts` exports validators for every request/response DTO:
 
-`validateInspectionEnvelope`, `validateEvidenceRef`, `validateMutationStatus`, `validateMutationDetails`, `validateEventMessage`, `encodeEventMessage`, `decodeEventMessage`, `validateRenamePreviewRequest/Response`, `validateOrganizeImportsRequest/Response`, `validateFormattingRequest/Response`, `validateCodeActionRequest/Response`, `validateStageWorkspaceEditSource`, `validateStageWorkspaceEditRequest`, `validateApplyStagedEditRequest`.
+`validateInspectionEnvelope`, `validateEvidenceRef`, `validateMutationStatus`, `validateMutationDetails`, `validateEventMessage`, `encodeEventMessage`, `decodeEventMessage`, `validateRenamePreviewRequest/Response`, `validateFormattingRequest/Response`, `validateCodeActionRequest/Response`, `validateCodeActionSelection`, `validateStageWorkspaceEditSource`, `validateStageWorkspaceEditRequest`, `validateApplyStagedEditRequest`.
 
 `src/language-intelligence.ts` exports `validateLanguageDiagnostic`, `validateLanguageIntelligenceCapabilitiesRequest/Response`, `validateCheckPostEditDiagnosticsRequest/Response`.
 
@@ -102,7 +100,7 @@ All validators return `{ ok: true, value } | { ok: false, error }` and enforce r
 - Version `0.5.0` generalizes mutation lifecycle contracts and added the language intelligence channel and its DTOs additively (no schema bump needed).
 - Version `0.6.0` (schema `5`) adds the optional `timeoutMs` envelope (integer 250..30000) on all language-intelligence request DTOs and requires `LspWorkspaceEdit.positionEncoding: "utf-16"`.
 - Version `0.7.0` (schema `5`, additive) adds the workspace-edit channel (`RPC_CHANNELS.workspaceEdit`, `stage_workspace_edit` / `apply_staged_edit` plus DTOs) and the edit-mode helper (`src/edit-mode.ts`, `resolveEditMode`).
-- Version `0.8.0` (schema `6`) requires `StageWorkspaceEditSource.document = { canonicalPath: string, sha256: string }` (lowercase 64-hex raw origin-source byte digest) as an explicit proposal generation precondition distinct from read authorization.
+- Version `0.8.0` (schema `6`) requires `StageWorkspaceEditSource.document = { canonicalPath: string, sha256: string }` (lowercase 64-hex raw origin-source byte digest) as an explicit proposal generation precondition distinct from read authorization. Folded into the same untagged `0.8.0` cut (D-81): language-intelligence edit RPCs return staged proposals only (`rename_preview`/`formatting` success is `{ ok: true, proposalId, files, diff }`; `code_action` discovery returns edit-free candidates with `actionId`+`sourceSha256` and explicit-selection resolution returns a staged proposal); the `organize_imports` RPC is removed (use `code_action` filtered to kind `source.organizeImports`). No `workspaceEdit` appears in any language-intelligence response; validators reject it fail-closed.
 - Release train: protocol → SmartRead → SmartEdit, in order. Consumers pin the `v0.8.0` tag (no range).
 
 ## Build / Test
