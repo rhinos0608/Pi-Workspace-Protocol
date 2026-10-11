@@ -14,7 +14,7 @@ Versioned TypeScript contracts for the Pi SmartRead/SmartEdit workspace mutation
 ```json
 {
   "dependencies": {
-    "@rhinos0608/pi-workspace-protocol": "github:rhinos0608/Pi-Workspace-Protocol#v0.7.0"
+    "@rhinos0608/pi-workspace-protocol": "github:rhinos0608/Pi-Workspace-Protocol#v0.8.0"
   }
 }
 ```
@@ -74,7 +74,7 @@ Additional language-intelligence types in `src/language-intelligence.ts`: `Langu
 
 All types in `src/types.ts`; validators in `src/contract.ts`.
 
-- `StageWorkspaceEditRequest` — `{ workspaceEdit: unknown (non-null object), source: { operation: string, serverDescriptorId?: string }, sessionFilePath: string, cwd: string }`
+- `StageWorkspaceEditRequest` — `{ workspaceEdit: unknown (non-null object), source: { operation: string, document: { canonicalPath: string, sha256: string }, serverDescriptorId?: string }, sessionFilePath: string, cwd: string }`
 - `StageWorkspaceEditResponse` — `{ ok: true, proposalId: string, files: string[], diff: string } | { ok: false, reason: string }`
 - `ApplyStagedEditRequest` — `{ proposalId: string, toolCallId: string, sessionFilePath: string, cwd: string }`
 - `ApplyStagedEditResponse` — `{ ok: boolean, status: "applied" | "rejected" | "failed", text: string, diagnostics: string[], changedFiles: string[] }`
@@ -90,7 +90,7 @@ All types in `src/types.ts`; validators in `src/contract.ts`.
 
 `src/contract.ts` exports validators for every request/response DTO:
 
-`validateInspectionEnvelope`, `validateEvidenceRef`, `validateMutationStatus`, `validateMutationDetails`, `validateEventMessage`, `encodeEventMessage`, `decodeEventMessage`, `validateRenamePreviewRequest/Response`, `validateOrganizeImportsRequest/Response`, `validateFormattingRequest/Response`, `validateCodeActionRequest/Response`, `validateStageWorkspaceEditRequest`, `validateApplyStagedEditRequest`.
+`validateInspectionEnvelope`, `validateEvidenceRef`, `validateMutationStatus`, `validateMutationDetails`, `validateEventMessage`, `encodeEventMessage`, `decodeEventMessage`, `validateRenamePreviewRequest/Response`, `validateOrganizeImportsRequest/Response`, `validateFormattingRequest/Response`, `validateCodeActionRequest/Response`, `validateStageWorkspaceEditSource`, `validateStageWorkspaceEditRequest`, `validateApplyStagedEditRequest`.
 
 `src/language-intelligence.ts` exports `validateLanguageDiagnostic`, `validateLanguageIntelligenceCapabilitiesRequest/Response`, `validateCheckPostEditDiagnosticsRequest/Response`.
 
@@ -98,11 +98,12 @@ All validators return `{ ok: true, value } | { ok: false, error }` and enforce r
 
 ## Schema Versioning
 
-- Schema version `5` (`PROTOCOL_SCHEMA_VERSION = 5`); any bump is a **breaking change** — validators require exact `schemaVersion` equality (`src/contract.ts`), so both consumers must update in lockstep. No version shim or negotiation.
+- Schema version `6` (`PROTOCOL_SCHEMA_VERSION = 6`); any bump is a **breaking change** — validators require exact `schemaVersion` equality (`src/contract.ts`), so both consumers must update in lockstep. No version shim or negotiation.
 - Version `0.5.0` generalizes mutation lifecycle contracts and added the language intelligence channel and its DTOs additively (no schema bump needed).
 - Version `0.6.0` (schema `5`) adds the optional `timeoutMs` envelope (integer 250..30000) on all language-intelligence request DTOs and requires `LspWorkspaceEdit.positionEncoding: "utf-16"`.
 - Version `0.7.0` (schema `5`, additive) adds the workspace-edit channel (`RPC_CHANNELS.workspaceEdit`, `stage_workspace_edit` / `apply_staged_edit` plus DTOs) and the edit-mode helper (`src/edit-mode.ts`, `resolveEditMode`).
-- Release train: protocol → SmartRead → SmartEdit, in order. Consumers pin the `v0.7.0` tag (no range).
+- Version `0.8.0` (schema `6`) requires `StageWorkspaceEditSource.document = { canonicalPath: string, sha256: string }` (lowercase 64-hex raw origin-source byte digest) as an explicit proposal generation precondition distinct from read authorization.
+- Release train: protocol → SmartRead → SmartEdit, in order. Consumers pin the `v0.8.0` tag (no range).
 
 ## Build / Test
 

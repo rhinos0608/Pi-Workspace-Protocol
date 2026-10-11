@@ -2,7 +2,7 @@
  * Runtime validators / codecs.
  * Pure functions. No I/O. No Pi imports.
  */
-import { PROTOCOL_SCHEMA_VERSION, type WorkspaceEvidenceEnvelope, type EvidenceRef, type EventMessage, type InspectedResource, type InspectMode, type MutationStatus, type MutationDetails } from "./types.js";
+import { PROTOCOL_SCHEMA_VERSION, type WorkspaceEvidenceEnvelope, type EvidenceRef, type EventMessage, type InspectedResource, type InspectMode, type MutationStatus, type MutationDetails, type StageWorkspaceEditSource, type StageWorkspaceEditRequest, type StageWorkspaceEditSourceDocument } from "./types.js";
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -340,17 +340,57 @@ export function validateCodeActionResponse(input: unknown): Result<import("./typ
   if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) return fail("CodeActionResponse.serverDescriptorId must be a non-empty string if present");
   return ok(input as unknown as import("./types.js").CodeActionResponse);
 }
-export function validateStageWorkspaceEditRequest(input: unknown): Result<import("./types.js").StageWorkspaceEditRequest> {
+function isAbsoluteShapedPath(p: string): boolean {
+  if (typeof p !== "string" || p.length === 0 || p.includes("\0")) return false;
+  if (p.startsWith("/")) return true;
+  if (p.startsWith("\\\\")) {
+    const [server, share] = p.slice(2).split(/[/\\]/);
+    return Boolean(server && share);
+  }
+  return /^[a-zA-Z]:[/\\]/.test(p);
+}
+
+export function validateStageWorkspaceEditSource(source: unknown): Result<StageWorkspaceEditSource> {
+  if (!isPlainObject(source)) return fail("StageWorkspaceEditRequest.source must be an object");
+  const { operation, document, serverDescriptorId } = source as Record<string, unknown>;
+  if (!isNonEmptyString(operation)) return fail("StageWorkspaceEditRequest.source.operation must be a non-empty string");
+  if (!isPlainObject(document)) return fail("StageWorkspaceEditRequest.source.document must be an object");
+
+  const docKeys = Object.keys(document);
+  for (const key of docKeys) {
+    if (key !== "canonicalPath" && key !== "sha256") {
+      return fail(`StageWorkspaceEditRequest.source.document has unknown field '${key}'`);
+    }
+  }
+
+  const { canonicalPath, sha256 } = document as Record<string, unknown>;
+  if (typeof canonicalPath !== "string" || canonicalPath.length === 0) {
+    return fail("StageWorkspaceEditRequest.source.document.canonicalPath must be a non-empty string");
+  }
+  if (canonicalPath.includes("\0")) {
+    return fail("StageWorkspaceEditRequest.source.document.canonicalPath must not contain NUL bytes");
+  }
+  if (!isAbsoluteShapedPath(canonicalPath)) {
+    return fail("StageWorkspaceEditRequest.source.document.canonicalPath must be an absolute path");
+  }
+  if (typeof sha256 !== "string" || !HEX64.test(sha256)) {
+    return fail("StageWorkspaceEditRequest.source.document.sha256 must be a 64-char lowercase hex sha256");
+  }
+  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) {
+    return fail("StageWorkspaceEditRequest.source.serverDescriptorId must be a non-empty string if present");
+  }
+  return ok(source as unknown as StageWorkspaceEditSource);
+}
+
+export function validateStageWorkspaceEditRequest(input: unknown): Result<StageWorkspaceEditRequest> {
   if (!isPlainObject(input)) return fail("StageWorkspaceEditRequest must be an object");
   const { workspaceEdit, source, sessionFilePath, cwd } = input as Record<string, unknown>;
   if (typeof workspaceEdit !== "object" || workspaceEdit === null || Array.isArray(workspaceEdit)) return fail("StageWorkspaceEditRequest.workspaceEdit must be a non-null object");
-  if (!isPlainObject(source)) return fail("StageWorkspaceEditRequest.source must be an object");
-  if (!isNonEmptyString((source as Record<string, unknown>).operation)) return fail("StageWorkspaceEditRequest.source.operation must be a non-empty string");
-  const serverDescriptorId = (source as Record<string, unknown>).serverDescriptorId;
-  if (serverDescriptorId !== undefined && !isNonEmptyString(serverDescriptorId)) return fail("StageWorkspaceEditRequest.source.serverDescriptorId must be a non-empty string if present");
+  const sourceRes = validateStageWorkspaceEditSource(source);
+  if (!sourceRes.ok) return sourceRes;
   if (!isNonEmptyString(sessionFilePath)) return fail("StageWorkspaceEditRequest.sessionFilePath must be a non-empty string");
   if (!isNonEmptyString(cwd)) return fail("StageWorkspaceEditRequest.cwd must be a non-empty string");
-  return ok(input as unknown as import("./types.js").StageWorkspaceEditRequest);
+  return ok(input as unknown as StageWorkspaceEditRequest);
 }
 export function validateApplyStagedEditRequest(input: unknown): Result<import("./types.js").ApplyStagedEditRequest> {
   if (!isPlainObject(input)) return fail("ApplyStagedEditRequest must be an object");

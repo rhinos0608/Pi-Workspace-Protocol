@@ -39,8 +39,8 @@ function buildValidEnvelope(): WorkspaceEvidenceEnvelope {
     };
 }
 
-test("PROTOCOL_SCHEMA_VERSION is 5", () => {
-    assert.equal(PROTOCOL_SCHEMA_VERSION, 5);
+test("PROTOCOL_SCHEMA_VERSION is 6", () => {
+    assert.equal(PROTOCOL_SCHEMA_VERSION, 6);
 });
 
 test("mutation validators accept edit and transfer lifecycle details", () => {

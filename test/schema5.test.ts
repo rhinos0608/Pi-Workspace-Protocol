@@ -65,8 +65,8 @@ test("constants: timeout envelope 250/10000/30000", () => {
     assert.equal(LSP_TIMEOUT_MS_MAX, 30000);
 });
 
-test("PROTOCOL_SCHEMA_VERSION is 5", () => {
-    assert.equal(PROTOCOL_SCHEMA_VERSION, 5);
+test("PROTOCOL_SCHEMA_VERSION is 6", () => {
+    assert.equal(PROTOCOL_SCHEMA_VERSION, 6);
 });
 
 test("LspWorkspaceEdit: requires positionEncoding utf-16", () => {
@@ -100,7 +100,9 @@ test("schema-5 event round-trip (encode/decode + gate)", () => {
     assert.equal(validateRenamePreviewRequest((msg.payload as Record<string, unknown>)).ok, true);
 });
 
-test("schema-5 gate rejects stale schemaVersion 4", () => {
-    const r = validateEventMessage({ kind: "request", requestId: "r", rpc: "rename_preview", payload: {}, schemaVersion: 4 });
-    assert.equal(r.ok, false);
+test("schema gate rejects stale schemaVersion 5 (and earlier)", () => {
+    const r5 = validateEventMessage({ kind: "request", requestId: "r", rpc: "rename_preview", payload: {}, schemaVersion: 5 });
+    assert.equal(r5.ok, false);
+    const r4 = validateEventMessage({ kind: "request", requestId: "r", rpc: "rename_preview", payload: {}, schemaVersion: 4 });
+    assert.equal(r4.ok, false);
 });

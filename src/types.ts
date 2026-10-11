@@ -3,7 +3,7 @@
  * No Pi imports. No filesystem state. No singletons.
  */
 
-export const PROTOCOL_SCHEMA_VERSION = 5 as const;
+export const PROTOCOL_SCHEMA_VERSION = 6 as const;
 
 /** LSP request timeout envelope (ms). Applies to all language-intelligence request DTOs invoking LSP via optional `timeoutMs`. */
 export const LSP_TIMEOUT_MS_MIN = 250 as const;
@@ -212,8 +212,14 @@ export const WORKSPACE_EDIT_RPC_METHODS = {
     apply: "apply_staged_edit",
 } as const;
 
+export interface StageWorkspaceEditSourceDocument {
+    readonly canonicalPath: string;
+    readonly sha256: string;
+}
+
 export interface StageWorkspaceEditSource {
     readonly operation: string;
+    readonly document: StageWorkspaceEditSourceDocument;
     readonly serverDescriptorId?: string;
 }
 
